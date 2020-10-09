@@ -4,7 +4,11 @@ from traffic_equilibrium.trips import Trips
 from traffic_equilibrium.link_cost import LinkCostLinear
 from traffic_equilibrium.vector import Vector
 from traffic_equilibrium.solver import Problem
+from traffic_equilibrium.tntp.network import TNTPNetwork
+from traffic_equilibrium.tntp.trips import TNTPTrips
+from traffic_equilibrium.tntp.solution import TNTPSolution
 import numpy as np
+
 
 @fixture
 def braess_network():
@@ -48,3 +52,22 @@ def braess_problem(braess_network, braess_trips, braess_cost_function):
         braess_trips.compile(),
         braess_cost_function
     )
+
+
+@fixture
+def sioux_falls_problem():
+    with open('test/fixtures/TransportationNetworks/SiouxFalls/SiouxFalls_net.tntp') as fp:
+        tntp_net = TNTPNetwork.read_file('SiouxFalls', fp)
+    with open('test/fixtures/TransportationNetworks/SiouxFalls/SiouxFalls_trips.tntp') as fp:
+        tntp_trips = TNTPTrips.read_file(fp)
+    return Problem(
+        tntp_net.to_road_network(),
+        tntp_trips.to_trips(tntp_net).compile(),
+        tntp_net.to_link_cost_function(),
+    )
+
+@fixture
+def sioux_falls_solution():
+    with open('test/fixtures/TransportationNetworks/SiouxFalls/SiouxFalls_flow.tntp') as fp:
+        tntp_solution = TNTPSolution.read_text(fp.read())
+    return tntp_solution

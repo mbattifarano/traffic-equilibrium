@@ -2,6 +2,7 @@ import os
 from setuptools import setup, find_packages
 from setuptools.extension import Extension
 from Cython.Build import cythonize
+import numpy
 
 
 SOURCE_DIR = 'src'
@@ -20,12 +21,16 @@ ext_modules = [
         [os.path.join(SOURCE_DIR, PACKAGE, f'*.pyx')],
         libraries=['igraph', 'm'],
         library_dirs=['/usr/local/lib'],
-        include_dirs=['/usr/local/include/igraph'],
+        include_dirs=[
+            '/usr/local/include/igraph',
+            numpy.get_include()
+        ],
         extra_compile_args=[
             "-Ofast",
             "-march=native",
             "-fopenmp",
             "-ftree-vectorize",
+            "-axCOMMON-AVX512"
         ],
         extra_link_args=["-Ofast", "-fopenmp"],
     )

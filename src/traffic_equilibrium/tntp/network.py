@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import dropwhile
-from typing import NamedTuple, List, Tuple
+from typing import NamedTuple, List, Tuple, Iterable
 from io import FileIO
 
 import numpy as np
@@ -20,6 +20,7 @@ class TNTPNetwork:
     meta_data: MetaData
     links: List[Link]
     name: str
+    node_index: NodeIndex
 
     @classmethod
     def read_text(cls, name: str, contents: str) -> TNTPNetwork:
@@ -28,7 +29,7 @@ class TNTPNetwork:
         items = filter(common.is_nonempty, dropwhile(common.is_header, lines))
         links = sorted(map(Link.from_line, items),
                        key=lambda l: l.id)
-        return TNTPNetwork(meta_data, links, name)
+        return TNTPNetwork(meta_data, links, name, NodeIndex.from_links(links))
 
     @classmethod
     def read_file(cls, name: str, fp: FileIO) -> TNTPNetwork:
@@ -54,19 +55,12 @@ class TNTPNetwork:
     def to_marginal_link_cost_function(self, fleet_link_flow=None) -> LinkCost:
         raise NotImplementedError
 
-    def to_road_network(self, name: str) -> DiGraph:
-        nodes = set()
-        for link in self.links:
-            nodes.add(link.from_node)
-            nodes.add(link.to_node)
-        nodes = sorted(nodes)
-        number_of_nodes = len(nodes)
-        # nodes need to be 0 ... n-1
-        node = {n: i for i, n in enumerate(nodes)}
-        g = DiGraph(name)
-        g.append_nodes(number_of_nodes)
+    def to_road_network(self) -> DiGraph:
+        g = DiGraph(self.name)
+        g.append_nodes(self.node_index.number_of_nodes)
         g.add_links_from([
-            (node[link.from_node], node[link.to_node])
+            (self.node_index.index_of(link.from_node),
+             self.node_index.index_of(link.to_node))
             for link in self.links
         ])
         return g
@@ -139,3 +133,38 @@ class LinkSchema(Schema):
     @post_load
     def to_link(self, data: dict, many, **kw) -> Link:
         return Link(**data)
+
+
+class NodeIndex:
+    _node_index: dict
+    _index_node: dict
+
+    @classmethod
+    def from_links(cls, links: Iterable[Link]) -> NodeIndex:
+        node_index = cls()
+        nodes = set()
+        for link in links:
+            nodes.add(link.from_node)
+            nodes.add(link.to_node)
+        nodes = sorted(nodes)
+        for i, n in enumerate(nodes):
+            node_index.add_node(n, i)
+        return node_index
+
+    @property
+    def number_of_nodes(self) -> int:
+        return len(self._node_index)
+
+    def __init__(self):
+        self._node_index = {}
+        self._index_node = {}
+
+    def index_of(self, node):
+        return self._node_index[node]
+
+    def node_of(self, index):
+        return self._index_node[index]
+
+    def add_node(self, node, index):
+        self._node_index[node] = index
+        self._index_node[index] = node

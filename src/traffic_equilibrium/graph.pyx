@@ -1,8 +1,13 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True,
 
 from libc.stdlib cimport free, malloc
+from libc.stdio cimport stdout, setbuf, printf
 from .igraph cimport *
 from .igraph_utils cimport *
+
+# disable stdout buffer (for debugging)
+# setbuf(stdout, NULL)
+
 
 cdef class GraphInfo:
     cdef readonly str name
@@ -64,6 +69,16 @@ cdef class DiGraph:
             vector_set(&vec, 2 * i + 1, v)
         self.add_links(&vec)
         igraph_vector_destroy(&vec)
+
+    def degree_of(self, igraph_integer_t vid):
+        cdef igraph_vs_t vs = igraph_vss_1(vid)
+        cdef igraph_vector_t result
+        cdef int deg
+        igraph_vector_init(&result, 1)
+        igraph_degree(self.graph, &result, vs, igraph_neimode_t.IGRAPH_OUT, 0)
+        deg = <int> vector_get(&result, 0)
+        igraph_vector_destroy(&result)
+        return deg
 
     def links(self):
         l = []

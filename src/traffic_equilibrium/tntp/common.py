@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import os
 import re
+import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from io import FileIO
 from itertools import takewhile
-from typing import List, Tuple
-from typing import NamedTuple
+from typing import List, Tuple, Optional, NamedTuple
 
 METADATA_PATTERN = re.compile(r"<(.*)>\s+(.*)")
 END_OF_LINE = ';'
@@ -65,8 +65,11 @@ def is_header(line: str) -> bool:
     return is_metadata_line(line) or is_comment(line) or is_empty(line)
 
 
-def parse_metadata(line: str) -> Tuple[str, str]:
+def parse_metadata(line: str) -> Optional[Tuple[str, str]]:
     m = METADATA_PATTERN.match(line)
+    if m is None:
+        warnings.warn(f"Failed to parse metadata line: {line}")
+        return None
     key, value = m.groups()
     return key, value
 
@@ -76,7 +79,7 @@ def metadata(lines: List[str]) -> dict:
         lambda l: is_metadata_line(l) and not is_end_of_metadata(l),
         lines
     )
-    return dict(map(parse_metadata, metadata_lines))
+    return dict(filter(None, map(parse_metadata, metadata_lines)))
 
 
 @dataclass

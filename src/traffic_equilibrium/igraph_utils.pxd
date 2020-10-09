@@ -32,7 +32,7 @@ cdef inline void igraph_vector_pow(igraph_vector_t* vector, igraph_real_t expone
 cdef inline igraph_real_t igraph_vector_dot(igraph_vector_t* v1, igraph_vector_t* v2) nogil:
     cdef long int i, n = vector_len(v1)
     cdef igraph_real_t value = 0.0
-    for i in prange(n):
+    for i in range(n):
         value += vector_get(v1, i) * vector_get(v2, i)
     return value
 

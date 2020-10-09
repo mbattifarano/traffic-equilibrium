@@ -1,5 +1,6 @@
 # cython: boundscheck=False, wraparound=False, cdivision=True,
 from libc.stdlib cimport free, malloc
+from libc.stdio cimport stdout, setbuf, printf
 cimport numpy
 from .igraph cimport (
     igraph_real_t,
@@ -17,6 +18,8 @@ from .igraph_utils cimport vector_get
 
 import numpy as np
 
+# disable stdout buffer (for debugging)
+# setbuf(stdout, NULL)
 
 cdef class Vector:
     def __cinit__(self):
@@ -24,8 +27,10 @@ cdef class Vector:
 
     def __dealloc__(self):
         if self.vec is not NULL and self.owner is True:
+            #printf("Freeing a vector at %p...", self.vec)
             igraph_vector_destroy(self.vec)
             free(self.vec)
+            #printf("vector freed\n")
             self.vec = NULL
 
     @staticmethod
@@ -82,14 +87,18 @@ cdef class Vector:
     def debug(self):
         return f"{len(self)} elements: {list(self)}"
 
+
 cdef class PointerVector:
     def __cinit__(self):
         self.owner = False
 
     def __dealloc__(self):
         if self.vec is not NULL and self.owner is True:
+            #printf("Freeing a pointer vector @ %p...", self.vec)
             igraph_vector_ptr_destroy_all(self.vec)
+            #printf("Attempting to free the pointer...")
             free(self.vec)
+            #printf("Vector freed\n")
             self.vec = NULL
 
     @staticmethod

@@ -13,6 +13,9 @@ cdef extern from "igraph.h" nogil:
     ctypedef struct igraph_matrix_t:
         pass
 
+    ctypedef struct igraph_deque_t:
+        pass
+
     ctypedef struct igraph_vector_t:
         igraph_real_t* stor_begin
         igraph_real_t* stor_end

@@ -1,7 +1,9 @@
 .eggs/
+.idea/
 .pytest_cache/
 .tox/
 build/
 *.egg-info/
 src/**/*.c
+!src/traffic_equilibrium/shortest_paths.c
 src/**/*.so

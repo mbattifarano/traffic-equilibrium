@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from itertools import dropwhile
 from typing import List, NamedTuple, Iterable, Tuple
 
-
-from traffic_assignment.network.demand import Demand, TravelDemand
-from traffic_assignment.network.road_network import Network
 from . import common
+from .network import TNTPNetwork
+
+from traffic_equilibrium.trips import Trips
 
 ORIGIN_PATTERN = re.compile(r"Origin\s*(\d+)")
 
@@ -16,18 +16,29 @@ ORIGIN_PATTERN = re.compile(r"Origin\s*(\d+)")
 @dataclass
 class TNTPTrips:
     meta_data: MetaData
-    trips: List[Trip]
+    trips: List[TNTPTrip]
+
+    @classmethod
+    def read_file(cls, fp) -> TNTPTrips:
+        return cls.read_text(fp.read())
 
     @classmethod
     def read_text(cls, contents: str) -> TNTPTrips:
         lines = contents.splitlines()
         meta_data = MetaData.from_lines(lines)
         items = dropwhile(common.is_header, lines)
-        trips = sorted(filter(is_non_zero_trip, Trip.from_lines(items)))
+        trips = sorted(filter(is_non_zero_trip, TNTPTrip.from_lines(items)))
         return TNTPTrips(meta_data, list(trips))
 
-    def to_demand(self, network: Network) -> TravelDemand:
-        return TravelDemand([trip.to_demand(network) for trip in self.trips])
+    def to_trips(self, network: TNTPNetwork) -> Trips:
+        trips = Trips()
+        for trip in self.trips:
+            trips.append(
+                network.node_index.index_of(trip.origin),
+                network.node_index.index_of(trip.destination),
+                trip.volume
+            )
+        return trips
 
     def total_demand(self) -> float:
         return sum(t.volume for t in self.trips)
@@ -50,13 +61,13 @@ class MetaData(NamedTuple):
         )
 
 
-class Trip(NamedTuple):
+class TNTPTrip(NamedTuple):
     origin: int
     destination: int
     volume: float
 
     @classmethod
-    def from_lines(cls, lines: Iterable[str]) -> Iterable[Trip]:
+    def from_lines(cls, lines: Iterable[str]) -> Iterable[TNTPTrip]:
         origin = None
         for line in filter(None, lines):
             m = ORIGIN_PATTERN.match(line)
@@ -64,17 +75,10 @@ class Trip(NamedTuple):
                 origin = int(m.group(1))
             else:
                 for destination, volume in parse_trips_line(line):
-                    yield Trip(origin, destination, volume)
-
-    def to_demand(self, network: Network) -> Demand:
-        return Demand(
-            network.get_node(self.origin),
-            network.get_node(self.destination),
-            self.volume,
-        )
+                    yield TNTPTrip(origin, destination, volume)
 
 
-def is_non_zero_trip(trip: Trip) -> bool:
+def is_non_zero_trip(trip: TNTPTrip) -> bool:
     return trip.volume > 0.0
 
 
@@ -83,4 +87,3 @@ def parse_trips_line(line: str) -> Iterable[Tuple[int, float]]:
     for item in items:
         destination, volume = item.strip().split(common.ASSIGNMENT)
         yield int(destination), float(volume)
-

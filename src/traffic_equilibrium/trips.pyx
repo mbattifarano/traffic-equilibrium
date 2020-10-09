@@ -1,6 +1,9 @@
 # cython: boundscheck=False, wraparound=False, cdivision=True,
 from .graph cimport graph_index_t
-from .igraph cimport igraph_real_t, igraph_vector_t
+from .igraph cimport (
+    igraph_real_t, igraph_vector_t, igraph_finally_func_t,
+    igraph_vector_ptr_set_item_destructor, igraph_vector_destroy
+)
 from .igraph_utils cimport vector_set, vector_ptr_set, vector_len, vector_ptr_get, vector_get
 from .vector cimport Vector, PointerVector
 
@@ -48,6 +51,8 @@ cdef class Trips:
                 k += 1
             vector_ptr_set(od_demand.targets.vec, i, targets.vec)
             vector_ptr_set(od_demand.trip_index.vec, i, trip_index.vec)
+        igraph_vector_ptr_set_item_destructor(od_demand.targets.vec, <igraph_finally_func_t*> igraph_vector_destroy)
+        igraph_vector_ptr_set_item_destructor(od_demand.trip_index.vec, <igraph_finally_func_t*> igraph_vector_destroy)
         return od_demand
 
 
