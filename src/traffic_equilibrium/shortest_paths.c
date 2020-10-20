@@ -1,3 +1,10 @@
+typedef struct node_data {
+	long int parent;    // previous node in the shortest path
+	double distance;  // distance of the shortest path to this node
+	long int length;  // number of edges in the shortest paths to this node
+	int visited;      // 1 if this node has been queued before
+	int dirty;      // 1 if this node was relabeled on the last iteration
+} node_data_t;
 
 static int get_shortest_paths_bellman_ford(
 	const igraph_t *graph,
@@ -7,117 +14,111 @@ static int get_shortest_paths_bellman_ford(
 	igraph_vs_t to,
 	const igraph_vector_t *weights,
 	igraph_neimode_t mode
-	)
-{
+	) {
 	/* Implementation details:
 	- `parents` assigns the inbound edge IDs of all vertices in the
-	 shortest path tree to the vertices. In this implementation, the
-	 edge ID + 1 is stored, zero means unreachable vertices.
+	shortest path tree to the vertices. In this implementation, the
+	edge ID + 1 is stored, zero means unreachable vertices.
 	- we don't use IGRAPH_INFINITY in the distance vector during the
-	 computation, as IGRAPH_FINITE() might involve a function call
-	 and we want to spare that. So we store distance+1.0 instead of
-	 distance, and zero denotes infinity.
+	computation, as IGRAPH_FINITE() might involve a function call
+	and we want to spare that. So we store distance+1.0 instead of
+	distance, and zero denotes infinity.
 	*/
 	long int no_of_nodes = igraph_vcount(graph);
 	igraph_lazy_inclist_t inclist;
-	long int i, j, k;//, head;
+	long int i, k, nlen, nei, size, act, edge;
 
 	igraph_dqueue_t Q, Q_pape;
 	long int q_count = 1, pape_count = 0;
-	igraph_vector_t unclean_vertices;
-	igraph_vector_t num_queued;
 	igraph_vit_t tovit;
-	igraph_vector_t dist;
-	igraph_real_t tmp_dist;
 
 	igraph_vector_t *neis;
-	long int nlen, nei, target;
-	long int *parents, *path_length;
-	igraph_real_t dist_to_j, dist_to_target;
+	node_data_t *data = igraph_Calloc(no_of_nodes, node_data_t);
 
-	/* setup parents array */
-	parents = igraph_Calloc(no_of_nodes, long int);
-	// Store the path length (number of edges) to each node
-	path_length = igraph_Calloc(no_of_nodes, long int);
+	long int u, v;
+	node_data_t *u_data, *v_data;
+	igraph_real_t dist_to_u, dist_to_v;
+	igraph_real_t tmp_dist;
 
-    igraph_dqueue_init(&Q, no_of_nodes);
-    igraph_dqueue_init(&Q_pape, no_of_nodes);
-    igraph_vector_init(&unclean_vertices, no_of_nodes);
-    igraph_vector_init(&num_queued, no_of_nodes);  // whether or not a node has been added to the queue
-    igraph_lazy_inclist_init(graph, &inclist, mode);
+	igraph_dqueue_init(&Q, no_of_nodes);
+	igraph_dqueue_init(&Q_pape, no_of_nodes);
+	igraph_lazy_inclist_init(graph, &inclist, mode);
 	igraph_vit_create(graph, to, &tovit);
-    igraph_vector_init(&dist, no_of_nodes);
 
-    /* bellman-ford */
-    VECTOR(dist)[source] = 1.0; // store distance + 1
+	/* bellman-ford */
 	igraph_dqueue_push(&Q, source);
-	VECTOR(num_queued)[source] = 1;
+	u_data = (data + source);
+	u_data->visited = 1;
+	u_data->distance = 1.0;
 
 	/* Run shortest paths */
 	while (q_count + pape_count) {
 		// pop from pape's queue if non-empty
 		if (pape_count) {
-			j = (long int) igraph_dqueue_pop(&Q_pape);
-			pape_count--;
+		  u = (long int) igraph_dqueue_pop(&Q_pape);
+		  pape_count--;
 		} else { // pop from the regular queue
-			j = (long int) igraph_dqueue_pop(&Q);
-			q_count--;
+		  u = (long int) igraph_dqueue_pop(&Q);
+		  q_count--;
 		}
+		u_data = (data + u);
 
-		VECTOR(unclean_vertices)[j] = 0;
-		dist_to_j = VECTOR(dist)[j]; // 0 means unreachable
+		u_data->dirty = 0; // set u to clean
+		dist_to_u = u_data->distance; // 0 means unreachable
 
-		neis = igraph_lazy_inclist_get(&inclist, (igraph_integer_t) j);
+		neis = igraph_lazy_inclist_get(&inclist, (igraph_integer_t) u);
 		nlen = igraph_vector_size(neis);
 
 		for (k = 0; k < nlen; k++) {
 			nei = (long int) VECTOR(*neis)[k];
-			target = IGRAPH_OTHER(graph, nei, j);
-			dist_to_target = VECTOR(dist)[target];
-			tmp_dist = dist_to_j + VECTOR(*weights)[nei];
-			if ((tmp_dist < dist_to_target) || (!dist_to_target) ) {
+			v = IGRAPH_OTHER(graph, nei, u);
+			v_data = (data + v);
+			dist_to_v = v_data->distance;
+			tmp_dist = dist_to_u + VECTOR(*weights)[nei];
+			if ((tmp_dist < dist_to_v) || (!dist_to_v) ) {
 				/* relax the edge */
-				VECTOR(dist)[target] = tmp_dist;
-				/* update parent of target */
-                parents[target] = nei + 1;
-                path_length[target] = path_length[j] + 1;
-				if (!VECTOR(unclean_vertices)[target]) {
-					VECTOR(unclean_vertices)[target] = 1;
+				v_data->distance = tmp_dist;
+				v_data->parent = nei + 1;
+				v_data->length = u_data->length + 1;
+
+				if (!(v_data->dirty)) {
+					v_data->dirty = 1;
 
 					/* Vanilla Bellman-Ford
-					IGRAPH_CHECK(igraph_dqueue_push(&Q, target));
+					igraph_dqueue_push(&Q, target);
 					*/
 
-					/* Pape's rule: if the target has been scanned already,
-					 * add it to pape's queue to ensure it is drawn first
-					 * otherwise add it to the regular queue.
-					 */
-					if (VECTOR(num_queued)[target]) {
+					/* Pape's rule:
+					* If the target has been scanned already,
+					* add it to pape's queue to ensure it is drawn first
+					* otherwise add it to the regular queue.
+					*/
+					if (v_data->visited) {
+						igraph_dqueue_push(&Q_pape, v);
+						pape_count++;
+					} else {
+						igraph_dqueue_push(&Q, v);
+						q_count++;
+						v_data->visited = 1;
+					}
+
+					/* SLF
+					* Compare the label of the target node with the head of Q.
+					* If the target label is smaller, append to pape's queue
+					* else append to regular queue.
+					if (pape_count) {
+						head = igraph_dqueue_back(&Q_pape);
+					} else {
+						head = igraph_dqueue_head(&Q);
+					}
+					if ((tmp_dist < VECTOR(dist)[head]) || (!VECTOR(dist)[head])) {
 						igraph_dqueue_push(&Q_pape, target);
 						pape_count++;
 					} else {
 						igraph_dqueue_push(&Q, target);
 						q_count++;
-						VECTOR(num_queued)[target] = 1;
-				    }
-
-				    /* SLF
-				     * Compare the label of the target node with the head of Q.
-				     * If the target label is smaller, append to pape's queue
-				     * else append to regular queue.
-				    if (pape_count) {
-				    	head = igraph_dqueue_back(&Q_pape);
-				    } else {
-				    	head = igraph_dqueue_head(&Q);
-				    }
-				    if ((tmp_dist < VECTOR(dist)[head]) || (!VECTOR(dist)[head])) {
-						igraph_dqueue_push(&Q_pape, target);
-						pape_count++;
-				    } else {
-						igraph_dqueue_push(&Q, target);
-						q_count++;
-				    }
-				    */
+					}
+					*/
 				}
 			}
 		}
@@ -125,54 +126,37 @@ static int get_shortest_paths_bellman_ford(
 
 	/* populate edges and path costs */
 	if (edges) {
-        for (IGRAPH_VIT_RESET(tovit), i = 0; !IGRAPH_VIT_END(tovit); IGRAPH_VIT_NEXT(tovit), i++) {
-        	long int node = IGRAPH_VIT_GET(tovit);
-        	long int size, act, edge;
+		for (IGRAPH_VIT_RESET(tovit), i = 0; !IGRAPH_VIT_END(tovit); IGRAPH_VIT_NEXT(tovit), i++) {
+			u = IGRAPH_VIT_GET(tovit);
+			u_data = (data + u);
 
-        	igraph_vector_t *evec = 0;
-        	evec = VECTOR(*edges)[i];
-        	igraph_vector_clear(evec);
+			igraph_vector_t *evec = 0;
+			evec = VECTOR(*edges)[i];
+			igraph_vector_clear(evec);
 
 			if (path_costs) {
-				VECTOR(*path_costs)[i] = VECTOR(dist)[node] - 1.0;
+				VECTOR(*path_costs)[i] = u_data->distance - 1.0;
 			}
 
-        	size = path_length[node];
-        	/*
-        	act = node;
-        	while (parents[act]) {
-        		size++;
-        		edge = parents[act] - 1;
-        		act = IGRAPH_OTHER(graph, edge, act);
-        	}
-        	if (size != path_length[node]) {
-        		printf("size (%li) is not equal to the computed path length (%li)\n", size, path_length[node]);
-        		abort();
-        	}
-        	*/
+			size = u_data->length;
 			igraph_vector_resize(evec, size);
 
-            act = node;
-            while (parents[act]) {
-                edge = parents[act] - 1;
-                act = IGRAPH_OTHER(graph, edge, act);
-                size--;
+			act = u;
+			while ((data + act)->parent) {
+				edge = (data + act)->parent - 1;
+				act = IGRAPH_OTHER(graph, edge, act);
+				size--;
 				VECTOR(*evec)[size] = edge;
-            }
-
-        }
+			}
+		}
 	}
 
 	/* de-allocate */
 	igraph_vit_destroy(&tovit);
-    igraph_vector_destroy(&unclean_vertices);
-	igraph_vector_destroy(&dist);
-    igraph_dqueue_destroy(&Q);
-    igraph_dqueue_destroy(&Q_pape);
-    igraph_vector_destroy(&num_queued);
-    igraph_lazy_inclist_destroy(&inclist);
-    igraph_Free(parents);
-    igraph_Free(path_length);
+	igraph_dqueue_destroy(&Q);
+	igraph_dqueue_destroy(&Q_pape);
+	igraph_lazy_inclist_destroy(&inclist);
+	igraph_Free(data);
 
 	return 0;
 }
