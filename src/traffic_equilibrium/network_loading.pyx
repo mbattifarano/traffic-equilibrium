@@ -12,7 +12,8 @@ from .igraph cimport (
     igraph_matrix_t, igraph_matrix_e_ptr, igraph_matrix_init, igraph_matrix_e,
     igraph_matrix_destroy, igraph_vector_destroy, igraph_finally_func_t,
     igraph_vs_t, igraph_vector_init, igraph_vector_ptr_set_item_destructor,
-    igraph_vector_ptr_view, igraph_vector_ptr_destroy_all, igraph_t
+    igraph_vector_ptr_view, igraph_vector_ptr_destroy_all, igraph_t,
+    igraph_vector_long_t
 )
 from .igraph_utils cimport (
     vector_get, vector_ptr_get, vector_len, vector_set, vector_ptr_set
@@ -25,15 +26,16 @@ from openmp cimport omp_get_max_threads
 #setbuf(stdout, NULL)
 
 cdef extern from "shortest_paths.c":
-    int igraph_get_shortest_paths_bellman_ford(
+    int get_shortest_paths_bellman_ford(
             igraph_t *graph,
             igraph_vector_ptr_t *edges, # paths from from to each of to
             igraph_vector_t *path_costs, # cost of each path
-            igraph_integer_t from_,
+            long int source,
             igraph_vs_t to,
             igraph_vector_t *weights,
             igraph_neimode_t mode
     ) nogil
+
 
 cdef void shortest_paths_assignment(DiGraph network,
                                     Vector cost,
@@ -41,7 +43,6 @@ cdef void shortest_paths_assignment(DiGraph network,
                                     Vector flow,
                                     PointerVector paths,
                                     ) nogil:
-    #printf("shortest_path_assignment:...")
     cdef:
         long int i, j, k, eid, first_trip_index
         long int number_of_sources = demand.number_of_sources()
@@ -59,10 +60,11 @@ cdef void shortest_paths_assignment(DiGraph network,
         igraph_matrix_t _flows
         igraph_real_t* _flow
         igraph_real_t _flow_at
-        bint use_label_correcting = False
+        bint use_label_correcting = True
     igraph_matrix_init(&_flows, network.number_of_links(), n_threads)
 
-    for i in prange(number_of_sources, num_threads=n_threads, schedule='guided', chunksize=32):
+    #printf("shortest_path_assignment:...")
+    for i in prange(number_of_sources, num_threads=n_threads, schedule='dynamic', chunksize=12):
     #for i in range(number_of_sources):
         #printf("%li getting source...", i)
         source = <igraph_integer_t> vector_get(demand.sources.vec, i)
@@ -114,6 +116,7 @@ cdef void shortest_paths_assignment(DiGraph network,
     igraph_matrix_destroy(&_flows)
     #printf("...done\n")
 
+
 cdef PointerVector init_path_vectors(OrgnDestDemand demand):
     cdef long int i, j, n_targets, n_sources = demand.number_of_sources()
     cdef PointerVector paths = PointerVector.nulls(n_sources)
@@ -138,6 +141,7 @@ def load_network(DiGraph network, Vector cost, OrgnDestDemand demand):
     shortest_paths_assignment(network, cost, demand, flow, paths)
     return flow, paths
 
+
 cdef inline void get_shortest_paths(
         igraph_t *graph,
         igraph_vector_ptr_t *paths_for_source,
@@ -148,7 +152,7 @@ cdef inline void get_shortest_paths(
 ) nogil:
     cdef igraph_neimode_t mode = igraph_neimode_t.IGRAPH_OUT
     if label_correcting is True:
-        igraph_get_shortest_paths_bellman_ford(
+        get_shortest_paths_bellman_ford(
             graph,
             paths_for_source,
             NULL,  # path costs

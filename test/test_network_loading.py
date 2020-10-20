@@ -1,4 +1,6 @@
 import pytest
+import time
+import warnings
 from traffic_equilibrium.vector import Vector
 from traffic_equilibrium.network_loading import load_network
 import numpy as np
@@ -30,4 +32,40 @@ def test_braess_network_loading(braess_network, braess_trips, braess_cost_functi
     assert np.allclose(_flow, np.array([6, 0, 6, 0, 6]))
 
 
+def test_sioux_falls_network_loading(sioux_falls_problem):
+    n_links = sioux_falls_problem.network.n_links()
+    zero = Vector.copy_of(np.zeros(n_links))
+    free_flow_cost = sioux_falls_problem.cost_fn.compute_link_cost_vector(zero)
+    t0 = time.time()
+    flow, paths = load_network(sioux_falls_problem.network,
+                               free_flow_cost,
+                               sioux_falls_problem.demand)
+    warnings.warn(f"Loaded Sioux Falls network in {time.time() - t0} seconds.")
+    _flow = flow.to_array()
+    assert len(_flow) == n_links
 
+
+def test_pittsburgh_network_loading(pittsburgh_problem):
+    n_links = pittsburgh_problem.network.n_links()
+    zero = Vector.copy_of(np.zeros(n_links))
+    free_flow_cost = pittsburgh_problem.cost_fn.compute_link_cost_vector(zero)
+    n = 25
+    timings = {'free flow': [], 'non-free flow': []}
+    for _ in range(n):
+        t0 = time.time()
+        flow, paths = load_network(pittsburgh_problem.network,
+                                   free_flow_cost,
+                                   pittsburgh_problem.demand)
+        timings['free flow'].append(time.time() - t0)
+        flow_cost = pittsburgh_problem.cost_fn.compute_link_cost_vector(flow)
+        t0 = time.time()
+        flow, paths = load_network(pittsburgh_problem.network,
+                                   flow_cost,
+                                   pittsburgh_problem.demand)
+        timings['non-free flow'].append(time.time() - t0)
+    fft = timings['free flow']
+    nfft = timings['non-free flow']
+    warnings.warn(("Loaded Pittsburgh: "
+                   f"free flow in {np.mean(fft)}±{np.std(fft)} seconds (best of {n}: {np.min(fft)}); "
+                   f"non free flow in {np.mean(nfft)}±{np.std(nfft)} seconds (best of {n}: {np.min(nfft)})")
+                  )

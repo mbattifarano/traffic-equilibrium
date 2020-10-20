@@ -30,7 +30,7 @@ ext_modules = [
             "-march=native",
             "-fopenmp",
             "-ftree-vectorize",
-            "-axCOMMON-AVX512"
+            #"-axCOMMON-AVX512"
         ],
         extra_link_args=["-Ofast", "-fopenmp"],
     )

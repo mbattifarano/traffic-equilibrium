@@ -89,6 +89,9 @@ cdef class DiGraph:
             l.append((int(u), int(v)))
         return l
 
+    def n_links(self):
+        return self.number_of_links()
+
     def info(self):
         return GraphInfo(
             self.name,

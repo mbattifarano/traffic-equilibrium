@@ -6,6 +6,9 @@ cdef extern from "igraph.h" nogil:
 
     ctypedef igraph_s igraph_t
 
+    ctypedef struct igraph_2wheap_t:
+        pass
+
     ctypedef int igraph_integer_t
     ctypedef double igraph_real_t
     ctypedef bint igraph_bool_t

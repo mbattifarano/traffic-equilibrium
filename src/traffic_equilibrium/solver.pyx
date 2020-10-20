@@ -75,7 +75,7 @@ def solve(Problem problem, FrankWolfeSettings settings):
     cdef double t_loading = 0.0, t_gap = 0.0, t_line_search = 0.0, t_iteration
     t0 = now()
 
-    #printf("Computing initial assignment\n")
+    printf("Computing initial assignment\n")
     # initial assignment
     shortest_paths_assignment(problem.network,
                               cost,
@@ -83,6 +83,7 @@ def solve(Problem problem, FrankWolfeSettings settings):
                               flow,
                               paths
                               )
+    printf("Computed initial assignment in %g seconds.\n", now() - t0)
     problem.cost_fn.compute_link_cost(flow.vec, cost.vec)
     while k < settings.max_iterations and gap > settings.gap_tolerance:
         # all or nothing assignment
@@ -97,7 +98,7 @@ def solve(Problem problem, FrankWolfeSettings settings):
         t1 = now()
         # compute gap
         gap = compute_gap(flow, cost, volume, paths)
-        #printf("%li: gap = %g;", k, gap)
+        # printf("%li: gap = %g;", k, gap)
         t_gap += now() - t1
         t1 = now()
         # compute search direction (next_flow is now the search direction)

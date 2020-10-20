@@ -1,3 +1,4 @@
+import os
 from pytest import fixture
 from traffic_equilibrium.graph import DiGraph
 from traffic_equilibrium.trips import Trips
@@ -7,6 +8,7 @@ from traffic_equilibrium.solver import Problem
 from traffic_equilibrium.tntp.network import TNTPNetwork
 from traffic_equilibrium.tntp.trips import TNTPTrips
 from traffic_equilibrium.tntp.solution import TNTPSolution
+from traffic_equilibrium.mac_shp.problem import to_equilibrium_problem
 import numpy as np
 
 
@@ -66,8 +68,16 @@ def sioux_falls_problem():
         tntp_net.to_link_cost_function(),
     )
 
+
 @fixture
 def sioux_falls_solution():
     with open('test/fixtures/TransportationNetworks/SiouxFalls/SiouxFalls_flow.tntp') as fp:
         tntp_solution = TNTPSolution.read_text(fp.read())
     return tntp_solution
+
+
+@fixture(scope='session')
+def pittsburgh_problem():
+    return to_equilibrium_problem(os.path.join(
+        'test', 'fixtures', 'pittsburgh-network'
+    ))

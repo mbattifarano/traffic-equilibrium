@@ -7,3 +7,4 @@ build/
 src/**/*.c
 !src/traffic_equilibrium/shortest_paths.c
 src/**/*.so
+*.html
