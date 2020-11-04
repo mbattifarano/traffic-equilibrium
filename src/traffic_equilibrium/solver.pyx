@@ -41,6 +41,14 @@ cdef class Problem:
         self.demand.save(dirname)
         self.cost_fn.save(dirname)
 
+    @staticmethod
+    def load(dirname):
+        return Problem.__new__(Problem,
+                               DiGraph.load(dirname),
+                               OrgnDestDemand.load(dirname),
+                               LinkCost.load(dirname)
+                               )
+
 
 cdef class FrankWolfeSettings:
     cdef readonly long int max_iterations
@@ -59,6 +67,15 @@ cdef class FrankWolfeSettings:
                 'gap_tolerance': self.gap_tolerance,
                 'line_search_tolerance': self.line_search_tolerance,
             }, fp, indent=2)
+
+    @staticmethod
+    def load(filename):
+        with open(f"{filename}.json") as fp:
+            obj = json.load(fp)
+        return FrankWolfeSettings.__new__(FrankWolfeSettings,
+                                          obj['max_iterations'],
+                                          obj['gap_tolerance'],
+                                          obj['line_search_tolerance'])
 
 
 cdef class Result:
@@ -100,12 +117,13 @@ cdef class Result:
         self.settings.save(os.path.join(dirname, 'settings'))
         self.problem.save(dirname)
 
-    def load(self, dirname):
-        """
-        flow = Vector.copy_of(np.load(os.path.join(dirname, 'flow')))
-        cost = Vector.copy_of(np.load(os.path.join(dirname, 'cost')))
+    @staticmethod
+    def load(dirname):
+        flow = Vector.copy_of(np.load(os.path.join(dirname, 'flow.npy')))
+        cost = Vector.copy_of(np.load(os.path.join(dirname, 'cost.npy')))
         settings = FrankWolfeSettings.load(os.path.join(dirname, 'settings'))
         path_set = PathSet.load(dirname)
+        problem = Problem.load(dirname)
         with open(os.path.join(dirname, "metadata.json")) as fp:
             obj = json.load(fp)
         gap = obj['gap']
@@ -117,8 +135,6 @@ cdef class Result:
             path_set,
             flow, cost, gap, iterations, duration
         )
-        """
-        pass
 
 
 def solve(Problem problem, FrankWolfeSettings settings):

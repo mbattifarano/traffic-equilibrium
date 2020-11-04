@@ -101,4 +101,28 @@ cdef class OrgnDestDemand:
         with open(os.path.join(dirname, "demand.json"), "w") as fp:
             json.dump(obj, fp, indent=2)
 
-
+    @staticmethod
+    def load(dirname):
+        with open(os.path.join(dirname, "demand.json")) as fp:
+            data = json.load(fp)
+        cdef long int n_sources = len(data['sources'])
+        cdef long int n_trips = len(data['volumes'])
+        cdef OrgnDestDemand demand = OrgnDestDemand.__new__(OrgnDestDemand,
+                                                            n_sources,
+                                                            n_trips)
+        cdef Vector targets, indices
+        for i, s in enumerate(data['sources']):
+            vector_set(demand.sources.vec, i, s)
+            _targets = data['targets'][i]
+            targets = Vector.zeros(len(_targets), owner=False)
+            for j, t in enumerate(_targets):
+                vector_set(targets.vec, j, t)
+            _indices = data['trip_index'][i]
+            indices = Vector.zeros(len(_indices), owner=False)
+            for j, idx in enumerate(_indices):
+                vector_set(indices.vec, j, idx)
+            vector_ptr_set(demand.targets.vec, i, targets.vec)
+            vector_ptr_set(demand.trip_index.vec, i, indices.vec)
+        for i, v in enumerate(data['volumes']):
+            vector_set(demand.volumes.vec, i, v)
+        return demand

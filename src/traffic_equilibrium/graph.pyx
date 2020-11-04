@@ -3,6 +3,7 @@
 from libc.stdlib cimport free, malloc
 from libc.stdio cimport stdout, setbuf, printf, fopen, fclose
 from .igraph cimport *
+from .vector cimport Vector
 from .igraph_utils cimport *
 
 import os
@@ -116,3 +117,12 @@ cdef class DiGraph:
                 'number_of_nodes': self.number_of_nodes(),
                 'edges': edgelist,
             }, fp, indent=2)
+
+    @staticmethod
+    def load(dirname):
+        with open(os.path.join(dirname, f"network.json")) as fp:
+            data = json.load(fp)
+        cdef DiGraph network = DiGraph.__new__(DiGraph, data["name"])
+        network.add_nodes(data["number_of_nodes"])
+        network.add_links_from(data["edges"])
+        return network

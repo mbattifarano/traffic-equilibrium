@@ -4,6 +4,7 @@ from .igraph_utils cimport igraph_vector_pow
 
 import os
 import json
+import numpy as np
 
 cdef class LinkCostFunctions:
     @classmethod
@@ -23,9 +24,18 @@ cdef class LinkCost:
     def save(self, name):
         return NotImplemented
 
-    @classmethod
-    def load(cls, name):
-        pass
+    @staticmethod
+    def load(name):
+        with open(os.path.join(name, "cost_function.json")) as fp:
+            obj = json.load(fp)
+        class_name = obj['name']
+        cls = {
+            'bpr': LinkCostBPR,
+            'linear': LinkCostLinear,
+        }.get(class_name.lower())
+        if cls is None:
+            raise Exception(f"Unrecognized class name {class_name}.")
+        return cls.load(obj['kwargs'])
 
 cdef class LinkCostBPR(LinkCost):
     def __cinit__(self,
@@ -60,6 +70,12 @@ cdef class LinkCostBPR(LinkCost):
                 }
             }, fp, indent=2)
 
+    @staticmethod
+    def load(kwargs):
+        cdef Vector cap = Vector.copy_of(np.array(kwargs['capacity']))
+        cdef Vector fftt = Vector.copy_of(np.array(kwargs['free_flow_travel_time']))
+        return LinkCostBPR(kwargs['alpha'], kwargs['beta'], cap, fftt)
+
 
 cdef class LinkCostLinear(LinkCost):
     def __cinit__(self, Vector coefficients, Vector constants):
@@ -80,4 +96,12 @@ cdef class LinkCostLinear(LinkCost):
                     'constants': self.constants.to_array().tolist(),
                 }
             }, fp, indent=2)
+
+    @staticmethod
+    def load(kwargs):
+        cdef Vector coefs = Vector.copy_of(np.array(kwargs['coefficients']))
+        cdef Vector constants = Vector.copy_of(np.array(kwargs['constants']))
+        return LinkCostLinear.__class__(LinkCostLinear,
+                                        coefs,
+                                        constants)
 
