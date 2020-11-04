@@ -7,6 +7,9 @@ from .igraph cimport (
 from .igraph_utils cimport vector_set, vector_ptr_set, vector_len, vector_ptr_get, vector_get
 from .vector cimport Vector, PointerVector
 
+import numpy as np
+import os
+import json
 
 cdef class Trip:
     def __cinit__(self, graph_index_t source, graph_index_t target,
@@ -77,3 +80,25 @@ cdef class OrgnDestDemand:
     cdef long int index_of(OrgnDestDemand self, long int source, long int target) nogil:
         cdef igraph_vector_t* _index_by_target = <igraph_vector_t*> vector_ptr_get(self.trip_index.vec, source)
         return <long int> vector_get(_index_by_target, target)
+
+    def save(self, dirname):
+        cdef long int i = 0
+        cdef igraph_vector_t *_targets
+        cdef igraph_vector_t *_indices
+        cdef list targets = []
+        cdef list indices = []
+        for i in range(self.number_of_sources()):
+            _targets = <igraph_vector_t*> vector_ptr_get(self.targets.vec, i)
+            targets.append(Vector.of(_targets).to_array().tolist())
+            _indices = <igraph_vector_t*> vector_ptr_get(self.trip_index.vec, i)
+            indices.append(Vector.of(_indices).to_array().tolist())
+        cdef dict obj = {
+            'sources': self.sources.to_array().tolist(),
+            'volumes': self.volumes.to_array().tolist(),
+            'targets': targets,
+            'trip_index': indices,
+        }
+        with open(os.path.join(dirname, "demand.json"), "w") as fp:
+            json.dump(obj, fp, indent=2)
+
+

@@ -78,6 +78,8 @@ def sioux_falls_solution():
 
 @fixture(scope='session')
 def pittsburgh_problem():
-    return to_equilibrium_problem(os.path.join(
-        'test', 'fixtures', 'pittsburgh-network'
-    ))
+    return to_equilibrium_problem(os.path.join('test', 'fixtures',
+                                               'pittsburgh-small-network'),
+                                  'nodes.shp',
+                                  'links.shp'
+                                  )

@@ -1,9 +1,12 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True,
 
 from libc.stdlib cimport free, malloc
-from libc.stdio cimport stdout, setbuf, printf
+from libc.stdio cimport stdout, setbuf, printf, fopen, fclose
 from .igraph cimport *
 from .igraph_utils cimport *
+
+import os
+import json
 
 # disable stdout buffer (for debugging)
 # setbuf(stdout, NULL)
@@ -18,6 +21,10 @@ cdef class GraphInfo:
         self.name = name
         self.number_of_nodes = number_of_nodes
         self.number_of_links = number_of_links
+
+
+    def __str__(self):
+        return f"GraphInfo(name={self.name}, number_of_nodes={self.number_of_nodes}, number_of_links={self.number_of_links})"
 
 
 cdef class DiGraph:
@@ -89,12 +96,23 @@ cdef class DiGraph:
             l.append((int(u), int(v)))
         return l
 
-    def n_links(self):
-        return self.number_of_links()
-
     def info(self):
         return GraphInfo(
             self.name,
             self.number_of_nodes(),
             self.number_of_links()
         )
+
+    def save(self, dirname):
+        cdef list edgelist = []
+        cdef long int eid, n = self.number_of_links()
+        cdef int u, v
+        for eid in range(n):
+            igraph_edge(self.graph, eid, &u, &v)
+            edgelist.append((int(u), int(v)))
+        with open(os.path.join(dirname, f"network.json"), "w") as fp:
+            json.dump({
+                'name': self.name,
+                'number_of_nodes': self.number_of_nodes(),
+                'edges': edgelist,
+            }, fp, indent=2)

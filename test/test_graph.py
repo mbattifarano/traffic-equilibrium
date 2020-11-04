@@ -36,3 +36,22 @@ def test_add_links():
     assert info.number_of_nodes == 4
     assert info.number_of_links == 5
     assert g.links() == links_to_add
+
+
+def test_add_links_order():
+    g = DiGraph()
+    g.append_nodes(4)
+    links_to_add = [
+        (1, 3),
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (0, 2),
+    ]
+    g.add_links_from(links_to_add)
+    info = g.info()
+    links = g.links()
+    assert info.number_of_nodes == 4
+    assert info.number_of_links == 5
+    assert links[0] == (1, 3)
+    assert links == links_to_add

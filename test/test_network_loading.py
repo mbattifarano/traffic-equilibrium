@@ -27,39 +27,40 @@ def test_braess_network_loading(braess_network, braess_trips, braess_cost_functi
     zero = Vector.copy_of(np.zeros(5))
     free_flow_cost = braess_cost_function.compute_link_cost_vector(zero)
     demand = braess_trips.compile()
-    flow, paths = load_network(braess_network, free_flow_cost, demand)
+    flow, paths, best_path_cost = load_network(braess_network, free_flow_cost, demand)
     _flow = flow.to_array()
+    assert np.allclose(best_path_cost.to_array(), np.array([10.0]))
     assert np.allclose(_flow, np.array([6, 0, 6, 0, 6]))
 
 
 def test_sioux_falls_network_loading(sioux_falls_problem):
-    n_links = sioux_falls_problem.network.n_links()
-    zero = Vector.copy_of(np.zeros(n_links))
+    info = sioux_falls_problem.network.info()
+    zero = Vector.copy_of(np.zeros(info.number_of_links))
     free_flow_cost = sioux_falls_problem.cost_fn.compute_link_cost_vector(zero)
     t0 = time.time()
-    flow, paths = load_network(sioux_falls_problem.network,
+    flow, paths, best_path_cost = load_network(sioux_falls_problem.network,
                                free_flow_cost,
                                sioux_falls_problem.demand)
     warnings.warn(f"Loaded Sioux Falls network in {time.time() - t0} seconds.")
     _flow = flow.to_array()
-    assert len(_flow) == n_links
+    assert len(_flow) == info.number_of_links
 
 
 def test_pittsburgh_network_loading(pittsburgh_problem):
-    n_links = pittsburgh_problem.network.n_links()
-    zero = Vector.copy_of(np.zeros(n_links))
+    info = pittsburgh_problem.network.info()
+    zero = Vector.copy_of(np.zeros(info.number_of_links))
     free_flow_cost = pittsburgh_problem.cost_fn.compute_link_cost_vector(zero)
     n = 25
     timings = {'free flow': [], 'non-free flow': []}
     for _ in range(n):
         t0 = time.time()
-        flow, paths = load_network(pittsburgh_problem.network,
+        flow, paths, best_path_cost = load_network(pittsburgh_problem.network,
                                    free_flow_cost,
                                    pittsburgh_problem.demand)
         timings['free flow'].append(time.time() - t0)
         flow_cost = pittsburgh_problem.cost_fn.compute_link_cost_vector(flow)
         t0 = time.time()
-        flow, paths = load_network(pittsburgh_problem.network,
+        flow, paths, best_path_cost = load_network(pittsburgh_problem.network,
                                    flow_cost,
                                    pittsburgh_problem.demand)
         timings['non-free flow'].append(time.time() - t0)

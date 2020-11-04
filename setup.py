@@ -19,10 +19,13 @@ ext_modules = [
     Extension(
         '.'.join([PACKAGE, '*']),
         [os.path.join(SOURCE_DIR, PACKAGE, f'*.pyx')],
-        libraries=['igraph', 'm'],
-        library_dirs=['/usr/local/lib'],
+        libraries=['igraph', 'm', 'dang'],
+        library_dirs=[
+            '/usr/local/lib'
+        ],
         include_dirs=[
             '/usr/local/include/igraph',
+            '/usr/local/include',
             numpy.get_include()
         ],
         extra_compile_args=[

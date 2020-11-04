@@ -8,12 +8,20 @@ from .vector cimport Vector, PointerVector
 from .network_loading cimport init_path_vectors, shortest_paths_assignment
 from .igraph_utils cimport vector_len, vector_ptr_len, vector_get, vector_ptr_get, igraph_vector_dot
 from .timer cimport now
+from .path_set cimport PathSet
 
 from .igraph cimport (
     igraph_vector_t, igraph_vector_sub, igraph_vector_add, igraph_vector_scale,
     igraph_vector_copy, igraph_vector_destroy, igraph_vector_update,
+    igraph_vector_sum,
     igraph_vector_ptr_t
 )
+
+import datetime as dt
+import os
+import json
+import numpy as np
+
 
 # disable stdout buffer (for debugging)
 # setbuf(stdout, NULL)
@@ -28,6 +36,11 @@ cdef class Problem:
         self.demand = demand
         self.cost_fn = cost_fn
 
+    def save(self, dirname):
+        self.network.save(dirname)
+        self.demand.save(dirname)
+        self.cost_fn.save(dirname)
+
 
 cdef class FrankWolfeSettings:
     cdef readonly long int max_iterations
@@ -39,10 +52,19 @@ cdef class FrankWolfeSettings:
         self.gap_tolerance = gap_tolerance
         self.line_search_tolerance = line_search_tolerance
 
+    def save(self, filename):
+        with open(f"{filename}.json", "w") as fp:
+            json.dump({
+                'max_iterations': self.max_iterations,
+                'gap_tolerance': self.gap_tolerance,
+                'line_search_tolerance': self.line_search_tolerance,
+            }, fp, indent=2)
+
 
 cdef class Result:
     cdef readonly Problem problem
     cdef readonly FrankWolfeSettings settings
+    cdef readonly PathSet path_set
     cdef readonly Vector flow
     cdef readonly Vector cost
     cdef readonly double gap
@@ -50,27 +72,67 @@ cdef class Result:
     cdef readonly double duration
 
     def __cinit__(self, Problem problem, FrankWolfeSettings settings,
+                  PathSet path_set,
                   Vector flow, Vector cost, double gap, long int iterations,
                   double duration):
         self.problem = problem
         self.settings = settings
+        self.path_set = path_set
         self.flow = flow
         self.cost = cost
         self.gap = gap
         self.iterations = iterations
         self.duration = duration
 
+    def save(self, name):
+        """Save the result to a directory."""
+        dirname = os.path.join(name, f"results-{dt.datetime.utcnow().isoformat(timespec='seconds')}")
+        os.makedirs(dirname)
+        with open(os.path.join(dirname, "metadata.json"), "w") as fp:
+            json.dump({
+                'gap': self.gap,
+                'iterations': self.iterations,
+                'duration': self.duration,
+            }, fp, indent=2)
+        np.save(os.path.join(dirname, 'flow'), self.flow.to_array())
+        np.save(os.path.join(dirname, 'cost'), self.cost.to_array())
+        self.path_set.write(dirname)
+        self.settings.save(os.path.join(dirname, 'settings'))
+        self.problem.save(dirname)
+
+    def load(self, dirname):
+        """
+        flow = Vector.copy_of(np.load(os.path.join(dirname, 'flow')))
+        cost = Vector.copy_of(np.load(os.path.join(dirname, 'cost')))
+        settings = FrankWolfeSettings.load(os.path.join(dirname, 'settings'))
+        path_set = PathSet.load(dirname)
+        with open(os.path.join(dirname, "metadata.json")) as fp:
+            obj = json.load(fp)
+        gap = obj['gap']
+        iterations = obj['iterations']
+        duration = obj['duration']
+        return Result.__new__(Result,
+            problem,
+            settings,
+            path_set,
+            flow, cost, gap, iterations, duration
+        )
+        """
+        pass
+
 
 def solve(Problem problem, FrankWolfeSettings settings):
     cdef long int k = 0, n_links = problem.network.number_of_links()
     # set the gap to something larger than the tolerance for the initial iteration
-    cdef double t0, t1, gap = settings.gap_tolerance + 1
+    cdef double t0, t1, t, gap = settings.gap_tolerance + 1
     cdef Vector flow = Vector.zeros(n_links)
     cdef Vector cost = Vector.zeros(n_links)
     cdef Vector next_flow = Vector.zeros(n_links)
     cdef Vector volume = Vector.of(problem.demand.volumes.vec)
+    cdef Vector best_path_costs = Vector.zeros(problem.demand.number_of_trips())
     problem.cost_fn.compute_link_cost(flow.vec, cost.vec)
-    cdef PointerVector paths = init_path_vectors(problem.demand)
+    cdef PathSet paths = PathSet.__new__(PathSet,
+                                         problem.demand.number_of_sources())
 
     cdef double t_loading = 0.0, t_gap = 0.0, t_line_search = 0.0, t_iteration
     t0 = now()
@@ -81,7 +143,8 @@ def solve(Problem problem, FrankWolfeSettings settings):
                               cost,
                               problem.demand,
                               flow,
-                              paths
+                              paths,
+                              best_path_costs
                               )
     printf("Computed initial assignment in %g seconds.\n", now() - t0)
     problem.cost_fn.compute_link_cost(flow.vec, cost.vec)
@@ -92,25 +155,33 @@ def solve(Problem problem, FrankWolfeSettings settings):
                                   cost,
                                   problem.demand,
                                   next_flow,
-                                  paths
+                                  paths,
+                                  best_path_costs
                                   )
-        t_loading += now() - t1
+        t = now() - t1
+        t_loading += t
+        #printf("%li: loading time %gs", k, t)
         t1 = now()
         # compute gap
-        gap = compute_gap(flow, cost, volume, paths)
-        # printf("%li: gap = %g;", k, gap)
-        t_gap += now() - t1
+        gap = compute_gap(flow, cost, volume, best_path_costs)
+        t = now() - t1
+        t_gap += t
+        #printf(", gap time %gs", t)
         t1 = now()
         # compute search direction (next_flow is now the search direction)
         igraph_vector_sub(next_flow.vec, flow.vec)
         # update flow and cost
         line_search(problem.cost_fn, flow, cost, next_flow, settings.line_search_tolerance)
-        t_line_search += now() - t1
+        t = now() - t1
+        t_line_search += t
+        #printf(", line search time %gs\n", t)
+        # printf("%li: gap: %g\n", k, gap)
         k += 1
     t_gap /= k
     t_loading /= k
     t_line_search /= k
     t_iteration = t_gap + t_loading + t_line_search
+    printf("path set stores %li paths using %li bytes.\n", paths.number_of_paths(), paths.memory_usage())
     printf("average timings per iteration %g:\n\tnetwork loading: %g (%g%%)\n\tgap: %g (%g%%)\n\tline search: %g (%g%%)\n",
            t_iteration,
            t_loading, 100.0 * t_loading / t_iteration,
@@ -120,6 +191,7 @@ def solve(Problem problem, FrankWolfeSettings settings):
     return Result(
         problem,
         settings,
+        paths,
         flow,
         cost,
         gap,
@@ -127,34 +199,20 @@ def solve(Problem problem, FrankWolfeSettings settings):
         now() - t0
     )
 
-cdef double compute_gap(Vector link_flow, Vector link_cost, Vector volume, PointerVector paths):
-    """Average Excess Cost 
-    
-    see Transportation Network Analysis (v0.85) p 190
+# TODO not correct fix.
+cdef double compute_gap(Vector link_flow, Vector link_cost, Vector volume, Vector best_path_cost):
+    """Average Excess Cost
+
+    See Transportation Network Analysis (v0.85) p 190
     """
     cdef double total_system_travel_time = igraph_vector_dot(
         link_flow.vec, link_cost.vec
     )
-    cdef long int i, j, k, l, eid, n_targets, n_sources = vector_ptr_len(paths.vec)
-    cdef igraph_vector_ptr_t* paths_for_source
-    cdef igraph_vector_t* path
-    cdef double best_path_travel_time = 0.0
-    cdef double _cost, _volume, total_volume = 0.0
-    # compute the cost of each path
-    k = 0
-    for i in range(n_sources):
-        paths_for_source = <igraph_vector_ptr_t*> vector_ptr_get(paths.vec, i)
-        n_targets = vector_ptr_len(paths_for_source)
-        for j in range(n_targets):
-            path = <igraph_vector_t*> vector_ptr_get(paths_for_source, j)
-            _cost = 0.0
-            _volume = vector_get(volume.vec, k)
-            total_volume += _volume
-            for l in range(vector_len(path)):
-                eid = <long int> vector_get(path, l)
-                _cost += vector_get(link_cost.vec, eid)
-            best_path_travel_time += (_cost * _volume)
-            k += 1
+    cdef double best_path_travel_time = igraph_vector_dot(
+        volume.vec,
+        best_path_cost.vec
+    )
+    cdef double total_volume = igraph_vector_sum(volume.vec)
     #printf("tstt: %g; bptt: %g; volume: %g\n", total_system_travel_time, best_path_travel_time, total_volume)
     return (total_system_travel_time - best_path_travel_time) / total_volume
 

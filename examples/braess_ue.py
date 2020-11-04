@@ -1,4 +1,5 @@
 import numpy as np
+import os
 
 from traffic_equilibrium.graph import DiGraph
 from traffic_equilibrium.trips import Trips
@@ -9,11 +10,11 @@ from traffic_equilibrium.solver import Problem, FrankWolfeSettings, solve
 net = DiGraph("braess")
 net.append_nodes(4)
 net.add_links_from([
-    (0, 1),
-    (0, 2),
-    (1, 2),
-    (1, 3),
-    (2, 3),
+    (0, 1),  # 0
+    (0, 2),  # 1
+    (1, 2),  # 2
+    (1, 3),  # 3
+    (2, 3),  # 4
 ])
 
 trips = Trips()
@@ -30,9 +31,9 @@ problem = Problem(
 )
 
 settings = FrankWolfeSettings(
-    10,
+    1000,
     1e-6,
-    1e-6,
+    1e-8,
 )
 
 print("Solving braess ue")
@@ -40,3 +41,7 @@ result = solve(problem, settings)
 print(f"Solved braess ue to gap {result.gap} in {result.iterations} iterations in {result.duration} seconds ({result.iterations/result.duration} it/s).")
 print(f"link flow = {result.flow.to_array()}")
 print(f"link cost = {result.cost.to_array()}")
+print("paths found:")
+result.path_set.display()
+print("saving results")
+result.save(os.path.join("examples", "results", "braess-ue"))

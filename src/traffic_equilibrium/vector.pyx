@@ -68,11 +68,19 @@ cdef class Vector:
         cdef long int length = len(array)
         igraph_vector_init_copy(vec, &view[0], length)
         vector.vec = vec
-        vector.owner = False
+        vector.owner = True
         return vector
 
     def to_array(self):
-        return np.array(list(self))
+        cdef long int i, n = igraph_vector_size(self.vec)
+        a = np.empty(n, dtype=np.double)
+        cdef double[:] _a = a
+        for i in range(n):
+            _a[i] = vector_get(self.vec, i)
+        return a
+
+    def to_list(self):
+        return self.to_array().tolist()
 
     def __len__(self):
         return igraph_vector_size(self.vec)

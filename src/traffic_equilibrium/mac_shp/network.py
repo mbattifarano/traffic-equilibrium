@@ -1,11 +1,13 @@
 import os
 import warnings
+import logging
 from collections import defaultdict, OrderedDict
 from typing import List, Tuple, Iterable, Optional
 from dataclasses import dataclass
 
 import fiona
 import numpy as np
+import networkx as nx
 from toolz import valmap, curry
 
 from .spatial_index import SpatialIndex, insert_point, nearest_neighbor
@@ -18,6 +20,8 @@ from .demand import read_csv, to_demand
 from traffic_equilibrium.graph import DiGraph
 from traffic_equilibrium.trips import Trips
 
+
+log = logging.getLogger(__name__)
 DEFAULT_NODE_FILE = 'node.shp'
 DEFAULT_LINK_FILE = 'link.shp'
 ZONES = 'zones'
@@ -53,21 +57,24 @@ def nearest_coordinate(idx: SpatialIndex, pt: Coordinate) -> Node:
 
 
 def network_data_from_shp(directory: str,
-                          node_file: str = DEFAULT_NODE_FILE,
-                          link_file: str = DEFAULT_LINK_FILE,
+                          node_file: str = None,
+                          link_file: str = None,
                           ) -> NetworkData:
+    log.info(f"Reading shp files from {directory}.")
+    node_file = node_file or DEFAULT_NODE_FILE
+    link_file = link_file or DEFAULT_LINK_FILE
     net_name = os.path.basename(directory)
     network = DiGraph(net_name)
+    g = nx.DiGraph()
     idx = SpatialIndex()
     zones = defaultdict(list)
     links = OrderedDict()
-    number_of_nodes = 0
     for i, node in enumerate(shp_items(os.path.join(directory, node_file))):
         # nodes are indexed sequentially
         n = to_node(i, node[Feature.properties])
         insert_point(idx, n.id, *n.coordinate, obj=n)
-        number_of_nodes += 1
-    network.append_nodes(number_of_nodes)
+        g.add_node(n.id, data=n)
+    log.info(f"Read {len(g)} nodes from {node_file}.")
     for edge_pair in shp_items(os.path.join(directory, link_file)):
         for link in to_links(edge_pair[Feature.properties],
                              edge_pair[Feature.geometry]):
@@ -80,11 +87,26 @@ def network_data_from_shp(directory: str,
                 # links is ordered
                 # links will be added to network in this order
                 links[e] = link
-    network.add_links_from(list(links.keys()))
+                g.add_edge(*e, data=link)
+    log.info(f"Read {g.number_of_edges()} links from {link_file}.")
+    log.info(f"Computing connected components...")
+    largest_cc_node_ids = max(nx.strongly_connected_components(g), key=len)
+    number_of_nodes = len(largest_cc_node_ids)
+    log.info(f"Largest connected components has {number_of_nodes} nodes.")
+    node_id_map = {n: i for (i, n) in enumerate(largest_cc_node_ids)}
+    network.append_nodes(number_of_nodes)
+    cc_links = OrderedDict()
+    for (u, v), link in links.items():
+        if (u in node_id_map) and (v in node_id_map):
+            u_i = node_id_map[u]
+            v_i = node_id_map[v]
+            cc_links[(u_i, v_i)] = link
+    network.add_links_from(list(cc_links.keys()))
     zone_nodes = valmap(extract_virtual_node(network), zones)
+    log.info(f"Created igraph road network: {network.info()}")
     return NetworkData(
         network,
-        links,
+        cc_links,
         zone_nodes
     )
 
@@ -93,11 +115,6 @@ def _csv_files(directory: str) -> Iterable[str]:
     for fname in os.listdir(directory):
         if fname.endswith('.csv'):
             yield os.path.join(directory, fname)
-
-
-def _get_virtual_node(network: NetworkData,
-                      zone_id: int) -> Optional[int]:
-    return network.zone.get(zone_id)
 
 
 def travel_demand(network: NetworkData, directory: str) -> Trips:
@@ -139,10 +156,6 @@ def extract_virtual_node(network: DiGraph,
             (network.degree_of(n), n) for n in s
         )
         return n
-
-
-def edges(graph):
-    return sorted(graph.edges)
 
 
 def array_of(data, key: str) -> np.ndarray:

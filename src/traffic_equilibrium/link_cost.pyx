@@ -2,6 +2,14 @@
 from .igraph cimport *
 from .igraph_utils cimport igraph_vector_pow
 
+import os
+import json
+
+cdef class LinkCostFunctions:
+    @classmethod
+    def get(cls, name, kwargs):
+        pass
+
 
 cdef class LinkCost:
     cdef void compute_link_cost(self, igraph_vector_t* flow, igraph_vector_t* cost):
@@ -13,7 +21,7 @@ cdef class LinkCost:
         return cost
 
     def save(self, name):
-        pass
+        return NotImplemented
 
     @classmethod
     def load(cls, name):
@@ -40,6 +48,18 @@ cdef class LinkCostBPR(LinkCost):
         igraph_vector_add_constant(cost, 1.0) # cost = 1 + alpha*(flow/capacity)**beta
         igraph_vector_mul(cost, self.free_flow_travel_time.vec)   # cost = freeflow * (1 + alpha*(flow/capacity)**beta)
 
+    def save(self, name):
+        with open(os.path.join(name, "cost_function.json"), "w") as fp:
+            json.dump({
+                'name': 'BPR',
+                'kwargs': {
+                    'alpha': self.alpha,
+                    'beta': self.beta,
+                    'capacity': self.capacity.to_array().tolist(),
+                    'free_flow_travel_time': self.free_flow_travel_time.to_array().tolist(),
+                }
+            }, fp, indent=2)
+
 
 cdef class LinkCostLinear(LinkCost):
     def __cinit__(self, Vector coefficients, Vector constants):
@@ -50,3 +70,14 @@ cdef class LinkCostLinear(LinkCost):
         igraph_vector_update(cost, flow)
         igraph_vector_mul(cost, self.coefficients.vec)
         igraph_vector_add(cost, self.constants.vec)
+
+    def save(self, name):
+        with open(os.path.join(name, "cost_function.json"), "w") as fp:
+            json.dump({
+                'name': 'Linear',
+                'kwargs': {
+                    'coefficients': self.coefficients.to_array().tolist(),
+                    'constants': self.constants.to_array().tolist(),
+                }
+            }, fp, indent=2)
+

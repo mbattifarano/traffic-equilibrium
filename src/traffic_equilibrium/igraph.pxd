@@ -51,6 +51,9 @@ cdef extern from "igraph.h" nogil:
     ctypedef struct igraph_spmatrix_t:
         pass
 
+    ctypedef struct igraph_dqueue_t:
+        pass
+
     cdef struct s_spmatrix_iter:
         igraph_spmatrix_t *m
         long int pos
@@ -125,6 +128,7 @@ cdef extern from "igraph.h" nogil:
     int igraph_vector_init_copy(igraph_vector_t *v, igraph_real_t *data, long int length);
 
     igraph_real_t igraph_vector_e(igraph_vector_t* vector, long int position)
+    igraph_real_t* igraph_vector_e_ptr(const igraph_vector_t* v, long int pos)
     void igraph_vector_set(igraph_vector_t* vector, long int position, igraph_real_t value)
     int igraph_vector_update(igraph_vector_t* target, igraph_vector_t* source)
 
@@ -179,3 +183,12 @@ cdef extern from "igraph.h" nogil:
                                            igraph_vector_long_t* predeccessors,
                                            igraph_vector_long_t* inbound_links
                                            )
+
+    # dqueue stuff
+    int igraph_dqueue_init(igraph_dqueue_t* q, long int size)
+    igraph_real_t igraph_dqueue_pop(igraph_dqueue_t* q)
+    igraph_real_t igraph_dqueue_pop_back(igraph_dqueue_t* q)
+    int igraph_dqueue_push(igraph_dqueue_t* q, igraph_real_t elem)
+    igraph_real_t igraph_dqueue_back(const igraph_dqueue_t* q)
+    igraph_real_t igraph_dqueue_head(const igraph_dqueue_t* q)
+    igraph_bool_t igraph_dqueue_empty(const igraph_dqueue_t* q)

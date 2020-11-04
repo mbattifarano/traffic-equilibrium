@@ -31,6 +31,8 @@ problem = Problem(
     tntp_net.to_link_cost_function(),
 )
 
+print(problem.network.info())
+
 settings = FrankWolfeSettings(
     1000000,
     1e-6,
@@ -45,3 +47,5 @@ cost = result.cost.to_array()
 print(f"link flow max absolute percentage error: {100*np.max(abs(flow - expected_flow)/expected_flow)}%.")
 assert np.linalg.norm((flow - expected_flow)/expected_flow) <= 0.01
 assert flow.dot(expected_cost) / expected_flow.dot(expected_cost) - 1.0 <= 1e-3
+print("saving results")
+result.save(os.path.join("examples", "results", "sioux-falls-ue"))

@@ -23,8 +23,10 @@ def _bpr(network_data: NetworkData):
     return LinkCostBPR(0.15, 4.0, Vector.copy_of(cap), Vector.copy_of(freeflow))
 
 
-def to_equilibrium_problem(directory: str) -> Problem:
-    network_data = network_data_from_shp(directory)
+def to_equilibrium_problem(directory: str,
+                           node_file: str = None,
+                           link_file: str = None) -> Problem:
+    network_data = network_data_from_shp(directory, node_file, link_file)
     cost_fn = _bpr(network_data)
     trips = travel_demand(network_data, os.path.join(directory, DEMAND_DIR))
     return Problem(
