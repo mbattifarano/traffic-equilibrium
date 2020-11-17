@@ -1,8 +1,8 @@
-from .path_set cimport PathSet
 from .vector cimport Vector
 from .graph cimport DiGraph
 from .trips cimport OrgnDestDemand
 from .link_cost cimport LinkCost
+from .pathdb cimport PathDB
 
 cdef class Problem:
     cdef readonly DiGraph network
@@ -17,7 +17,7 @@ cdef class FrankWolfeSettings:
 cdef class Result:
     cdef readonly Problem problem
     cdef readonly FrankWolfeSettings settings
-    cdef readonly PathSet path_set
+    cdef readonly PathDB paths
     cdef readonly Vector flow
     cdef readonly Vector cost
     cdef readonly double gap

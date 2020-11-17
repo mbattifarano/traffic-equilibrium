@@ -29,9 +29,12 @@ static int dqueue_push_front(igraph_dqueue_t *q, igraph_real_t elem) {
 	return 0;
 }
 
+typedef unsigned int storage_t;
+
 static int get_shortest_paths_bellman_ford(
 	const igraph_t *graph,
-	dang_t* path_trie,
+	leveldb_t *paths,
+	leveldb_writeoptions_t *writeoptions,
 	igraph_vector_t *path_costs,
 	const long int source,
 	igraph_vs_t to,
@@ -58,8 +61,8 @@ static int get_shortest_paths_bellman_ford(
 	igraph_dqueue_t *Q;
 	long int q2_count = 1, q1_count = 0;
 	igraph_vit_t tovit;
-	igraph_vector_t path;
-	igraph_vector_init(&path, igraph_ecount(graph));
+
+	storage_t *path = malloc(igraph_ecount(graph) * sizeof(storage_t));
 
 	igraph_vector_t *neis;
 	node_data_t *data = igraph_Calloc(no_of_nodes, node_data_t);
@@ -68,9 +71,6 @@ static int get_shortest_paths_bellman_ford(
 	int empty;
 	node_data_t *u_data, *v_data;
 	igraph_real_t dist_to_v, tmp_dist;
-
-	dang_node_t **walk;
-	dang_node_t **prev;
 
 	igraph_dqueue_init(&Q1, no_of_nodes);
 	igraph_dqueue_init(&Q2, no_of_nodes);
@@ -149,7 +149,8 @@ static int get_shortest_paths_bellman_ford(
 	}
 
 	/* populate edges and path costs */
-	if (path_trie) {
+	char *error = NULL;
+	if (paths) {
 		for (IGRAPH_VIT_RESET(tovit), i = 0; !IGRAPH_VIT_END(tovit); IGRAPH_VIT_NEXT(tovit), i++) {
 			u = IGRAPH_VIT_GET(tovit);
 			u_data = (data + u);
@@ -165,29 +166,25 @@ static int get_shortest_paths_bellman_ford(
 				VECTOR(*path_costs)[trip_idx] = u_data->distance - 1.0;
 			}
 
-			igraph_vector_resize(&path, 0);
 			act = u;
+			size = 0;
 			while ((data + act)->parent) {
 				edge = (data + act)->parent - 1;
-				// push edge onto stack
-				igraph_vector_push_back(&path, edge);
+				// store edges in path (the paths are stored in reverse)
+				path[size++] = edge;
 				// Add volume to link flow vector
 				link_flow[edge] += volume;
 				act = IGRAPH_OTHER(graph, edge, act);
 			}
-			size = igraph_vector_size(&path);
-
-			// TODO: use leveldb c api to write directly to leveldb instead of path trie
-			k = 0;
-			walk = &(path_trie->root);
-			prev = walk;
-			while (k < size) {
-				prev = walk;
-				edge = VECTOR(path)[size - k - 1];
-				walk = dang_append_to_path(path_trie, walk, edge, &k);
+			leveldb_put(paths, writeoptions,
+					    (char*) path, size * sizeof(storage_t),
+					    (char*) &trip_idx, sizeof(trip_idx),
+					    &error
+			);
+			if (error) {
+				fprintf(stderr, "Error in leveldb_put: %s", error);
+				free(error);
 			}
-			// store target node id as value
-			dang_mark_end(path_trie, prev, trip_idx);
 		}
 	}
 
@@ -195,9 +192,9 @@ static int get_shortest_paths_bellman_ford(
 	igraph_vit_destroy(&tovit);
 	igraph_dqueue_destroy(&Q1);
 	igraph_dqueue_destroy(&Q2);
-	igraph_vector_destroy(&path);
 	igraph_lazy_inclist_destroy(&inclist);
 	igraph_Free(data);
+	free(path);
 
 	return 0;
 }

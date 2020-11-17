@@ -30,14 +30,13 @@ cdef class Cursor:
 cdef class PathDB:
     cdef str name
     cdef leveldb_t* db
+    cdef bint is_open
     cdef leveldb_options_t* options
     cdef leveldb_readoptions_t* readoptions
     cdef leveldb_writeoptions_t* writeoptions
-    cdef leveldb_writebatch_t* writebatch
 
     cpdef void destroy_db(self)
     cpdef void close(self)
     cdef void put(self, const bytes_t[:] key, const bytes_t[:] value)
-    cdef void commit(self)
     cdef Value get(self, const bytes_t[:] key)
     cpdef Cursor cursor(self)

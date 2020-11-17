@@ -1,13 +1,13 @@
 from .graph cimport DiGraph
 from .vector cimport Vector, PointerVector
 from .trips cimport OrgnDestDemand
-from .path_set cimport PathSet
+from .pathdb cimport PathDB
 
 cdef void shortest_paths_assignment(DiGraph network,
                                     Vector cost,
                                     OrgnDestDemand demand,
                                     Vector flow,
-                                    PathSet paths,
+                                    PathDB paths,
                                     Vector best_path_cost
                                     ) nogil
 

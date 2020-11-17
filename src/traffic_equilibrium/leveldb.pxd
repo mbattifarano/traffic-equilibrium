@@ -25,6 +25,12 @@ cdef extern from "leveldb/c.h" nogil:
                             const char* name, char** errptr)
     
     void leveldb_close(leveldb_t* db)
+
+    void leveldb_put(leveldb_t* db,
+                     const leveldb_writeoptions_t* options,
+                     const char* key, size_t keylen,
+                     const char* val, size_t vallen,
+                     char** errptr)
     
     void leveldb_write(leveldb_t* db,
                        const leveldb_writeoptions_t* options,
@@ -59,7 +65,7 @@ cdef extern from "leveldb/c.h" nogil:
     # write options
     leveldb_writeoptions_t* leveldb_writeoptions_create()
     void leveldb_writeoptions_destroy(leveldb_writeoptions_t*)
-    void leveldb_writeoptions_set_sync(leveldb_writeoptions_t*, uint8_t)
+    void leveldb_writeoptions_set_sync(leveldb_writeoptions_t*, unsigned char)
     
     # read options
     leveldb_readoptions_t* leveldb_readoptions_create()

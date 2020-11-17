@@ -58,13 +58,16 @@ cdef class PathDB:
         if error != NULL:
             fprintf(stderr, "ERROR (cinit): %s\n", error)
             free(error)
+            self.is_open = False
+        else:
+            self.is_open = True
         self.readoptions = leveldb_readoptions_create()
         self.writeoptions = leveldb_writeoptions_create()
-        self.writebatch = leveldb_writebatch_create()
+        leveldb_writeoptions_set_sync(self.writeoptions, 0)
 
     def __dealloc__(self):
-        leveldb_writebatch_clear(self.writebatch)
-        leveldb_writebatch_destroy(self.writebatch)
+        if self.is_open:
+            leveldb_close(self.db)
         leveldb_options_destroy(self.options)
         leveldb_readoptions_destroy(self.readoptions)
         leveldb_writeoptions_destroy(self.writeoptions)
@@ -78,21 +81,18 @@ cdef class PathDB:
             free(error)
 
     cpdef void close(self):
-        self.commit()
         leveldb_close(self.db)
 
     cdef void put(self, const bytes_t[:] key, const bytes_t[:] value):
-        leveldb_writebatch_put(self.writebatch,
-                               <char *> &key[0], key.shape[0],
-                               <char *> &value[0], value.shape[0])
-
-    cdef void commit(self):
         cdef char *error = NULL
-        leveldb_write(self.db, self.writeoptions, self.writebatch, &error)
+        leveldb_put(self.db,
+                    self.writeoptions,
+                    <char *> &key[0], key.shape[0],
+                    <char *> &value[0], value.shape[0],
+                    &error)
         if error != NULL:
-            fprintf(stderr, "ERROR (commit): %s\n", error)
+            fprintf(stderr, "ERROR (put): %s\n", error)
             free(error)
-        leveldb_writebatch_clear(self.writebatch)
 
     cdef Value get(self, const bytes_t[:] key):
         cdef size_t length = 0
@@ -112,9 +112,6 @@ cdef class PathDB:
 
     def set_py(self, bytes key, bytes value):
         return self.put(key, value)
-
-    def flush(self):
-        self.commit()
 
     cpdef Cursor cursor(self):
         cdef Cursor cursor = Cursor.__new__(Cursor)

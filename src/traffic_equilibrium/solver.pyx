@@ -8,7 +8,7 @@ from .vector cimport Vector, PointerVector
 from .network_loading cimport init_path_vectors, shortest_paths_assignment
 from .igraph_utils cimport vector_len, vector_ptr_len, vector_get, vector_ptr_get, igraph_vector_dot
 from .timer cimport now
-from .path_set cimport PathSet
+from .pathdb import PathDB
 
 from .igraph cimport (
     igraph_vector_t, igraph_vector_sub, igraph_vector_add, igraph_vector_scale,
@@ -26,12 +26,8 @@ DEF BYTES_PER_GIBIBYTE = 1073742000.0
 # disable stdout buffer (for debugging)
 # setbuf(stdout, NULL)
 
-cpdef enum SolverMode:
-    USER = 1
-    SYSTEM = 2
 
 cdef class Problem:
-
     def __cinit__(self, DiGraph network, OrgnDestDemand demand, LinkCost cost_fn):
         self.network = network
         self.demand = demand
@@ -77,14 +73,13 @@ cdef class FrankWolfeSettings:
 
 
 cdef class Result:
-
     def __cinit__(self, Problem problem, FrankWolfeSettings settings,
-                  PathSet path_set,
+                  PathDB paths,
                   Vector flow, Vector cost, double gap, long int iterations,
                   double duration):
         self.problem = problem
         self.settings = settings
-        self.path_set = path_set
+        self.paths = paths
         self.flow = flow
         self.cost = cost
         self.gap = gap
@@ -100,7 +95,7 @@ cdef class Result:
         while k < max_iter and gap > tol:
             gap = improve(self.problem, self.settings,
                           self.flow, next_flow, self.cost,
-                          self.path_set, best_path_costs, self.problem.demand.volumes)
+                          self.paths, best_path_costs, self.problem.demand.volumes)
             k += 1
             # printf("- {iteration: %li, gap: %g}\n", k, gap)
         t0 = now() - t0
@@ -108,7 +103,6 @@ cdef class Result:
         self.iterations += k
         self.gap = gap
         printf("solved to average excess cost %g in %li iterations.\n", gap, k)
-        printf("path set stores %li paths using %g GB.\n", self.path_set.number_of_paths(), self.path_set.memory_usage() / 1000000000.0)
         printf("average timing per iteration %g.\n", k / self.duration)
         return self
 
@@ -124,40 +118,36 @@ cdef class Result:
                 'gap': self.gap,
                 'iterations': self.iterations,
                 'duration': self.duration,
+                'paths_db': self.paths.name,
             }, fp, indent=2)
         np.save(os.path.join(dirname, 'flow'), self.flow.to_array())
         np.save(os.path.join(dirname, 'cost'), self.cost.to_array())
-        self.path_set.write(dirname)
         self.settings.save(os.path.join(dirname, 'settings'))
         self.problem.save(dirname)
         return dirname
 
 
     @staticmethod
-    def load(dirname, with_pathset=True):
+    def load(dirname):
         flow = Vector.copy_of(np.load(os.path.join(dirname, 'flow.npy')))
         cost = Vector.copy_of(np.load(os.path.join(dirname, 'cost.npy')))
         settings = FrankWolfeSettings.load(os.path.join(dirname, 'settings'))
         problem = Problem.load(dirname)
-        if with_pathset:
-            path_set = PathSet.load(dirname)
-        else:
-            n_sources, _ = problem.demand.info()
-            path_set = PathSet(n_sources)
         with open(os.path.join(dirname, "metadata.json")) as fp:
             obj = json.load(fp)
+        paths = PathDB(obj['paths_db'])
         gap = obj['gap']
         iterations = obj['iterations']
         duration = obj['duration']
         return Result.__new__(Result,
             problem,
             settings,
-            path_set,
+            paths,
             flow, cost, gap, iterations, duration
         )
 
 
-def solve(Problem problem, FrankWolfeSettings settings):
+def solve(Problem problem, FrankWolfeSettings settings, PathDB paths):
     cdef long int k = 0, n_links = problem.network.number_of_links()
     # set the gap to something larger than the tolerance for the initial iteration
     cdef double t0, t1, t, gap = settings.gap_tolerance + 1
@@ -167,9 +157,6 @@ def solve(Problem problem, FrankWolfeSettings settings):
     cdef Vector volume = Vector.of(problem.demand.volumes.vec)
     cdef Vector best_path_costs = Vector.zeros(problem.demand.number_of_trips())
     problem.cost_fn.compute_link_cost(flow.vec, cost.vec)
-    cdef PathSet paths = PathSet.__new__(PathSet,
-                                         problem.demand.number_of_sources())
-
     cdef double t_iteration = 0.0
     t0 = now()
 
@@ -192,7 +179,6 @@ def solve(Problem problem, FrankWolfeSettings settings):
         # printf("- {iteration: %li, gap: %g}\n", k, gap)
     t_iteration = (now() - t0) / k
     printf("solved to average excess cost %g in %li iterations.\n", gap, k)
-    printf("path set stores %li paths using %g GiB.\n", paths.number_of_paths(), paths.memory_usage() / BYTES_PER_GIBIBYTE)
     printf("average timing per iteration %g.\n", t_iteration)
     return Result(
         problem,
@@ -207,7 +193,7 @@ def solve(Problem problem, FrankWolfeSettings settings):
 
 cdef inline double improve(Problem problem, FrankWolfeSettings settings,
                          Vector flow, Vector next_flow, Vector cost,
-                         PathSet paths,
+                         PathDB paths,
                          Vector best_path_costs, Vector volume):
     # all or nothing assignment
     shortest_paths_assignment(problem.network,

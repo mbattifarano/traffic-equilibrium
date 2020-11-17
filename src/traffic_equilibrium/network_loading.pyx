@@ -7,6 +7,8 @@ from .vector cimport Vector, PointerVector
 from .trips cimport OrgnDestDemand
 from .timer cimport now
 from .dang cimport dang_t
+from .leveldb cimport leveldb_t, leveldb_writeoptions_t
+from .pathdb cimport PathDB
 
 
 from .igraph cimport (
@@ -33,7 +35,8 @@ from openmp cimport omp_get_max_threads
 cdef extern from "shortest_paths.c":
     int get_shortest_paths_bellman_ford(
             igraph_t *graph,
-            dang_t* path_trie,
+            leveldb_t *paths,
+            leveldb_writeoptions_t *writeoptions,
             igraph_vector_t *path_costs, # cost of each path
             long int source,
             igraph_vs_t to,
@@ -80,7 +83,7 @@ cdef void shortest_paths_assignment(DiGraph network,
                                     Vector cost,
                                     OrgnDestDemand demand,
                                     Vector flow,
-                                    PathSet paths,
+                                    PathDB paths,
                                     Vector best_path_cost
                                     ) nogil:
     cdef:
@@ -118,7 +121,8 @@ cdef void shortest_paths_assignment(DiGraph network,
             _flow = <igraph_real_t*> igraph_matrix_e_ptr(&_flows, 0, thread_id)
             get_shortest_paths_bellman_ford(
                 network.graph,
-                paths.get_trie(i),
+                paths.db,
+                paths.writeoptions,
                 best_path_cost.vec,
                 source,
                 targets_vs,
@@ -159,7 +163,7 @@ cdef PointerVector init_path_vectors(OrgnDestDemand demand):
 def load_network(DiGraph network, Vector cost, OrgnDestDemand demand):
     cdef Vector flow = Vector.zeros(network.number_of_links())
     cdef long int i, number_of_sources = demand.number_of_sources()
-    cdef PathSet paths = PathSet.__new__(PathSet, number_of_sources)
+    cdef PathDB paths = PathDB.__new__(PathDB, f"{network.name}.db")
     cdef Vector best_path_cost = Vector.zeros(demand.number_of_trips())
     shortest_paths_assignment(network, cost, demand, flow, paths, best_path_cost)
     return flow, paths, best_path_cost
