@@ -87,6 +87,9 @@ cdef extern from "igraph.h" nogil:
     int igraph_vector_copy(igraph_vector_t* target, igraph_vector_t* source)
     void igraph_vector_destroy(igraph_vector_t* vector)
 
+    int igraph_vector_append(igraph_vector_t *to_vec,
+                             const igraph_vector_t *from_vec)
+
     int igraph_vector_ptr_init(igraph_vector_ptr_t* vector, long int length)
     igraph_vector_ptr_t* igraph_vector_ptr_view (igraph_vector_ptr_t *v, void **data, long int length)
     void igraph_vector_ptr_null(igraph_vector_ptr_t* vector)

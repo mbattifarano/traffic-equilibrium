@@ -9,7 +9,15 @@ from traffic_equilibrium.tntp.network import TNTPNetwork
 from traffic_equilibrium.tntp.trips import TNTPTrips
 from traffic_equilibrium.tntp.solution import TNTPSolution
 from traffic_equilibrium.mac_shp.problem import to_equilibrium_problem
+from traffic_equilibrium.pathdb import PathDB
 import numpy as np
+
+
+@fixture
+def path_db():
+    db = PathDB("test/artifacts/db_test.lvl")
+    yield db
+    db.destroy_db()
 
 
 @fixture

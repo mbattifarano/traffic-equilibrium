@@ -22,14 +22,15 @@ import os
 import json
 import numpy as np
 
-
+DEF BYTES_PER_GIBIBYTE = 1073742000.0
 # disable stdout buffer (for debugging)
 # setbuf(stdout, NULL)
 
+cpdef enum SolverMode:
+    USER = 1
+    SYSTEM = 2
+
 cdef class Problem:
-    cdef readonly DiGraph network
-    cdef readonly OrgnDestDemand demand
-    cdef readonly LinkCost cost_fn
 
     def __cinit__(self, DiGraph network, OrgnDestDemand demand, LinkCost cost_fn):
         self.network = network
@@ -51,9 +52,6 @@ cdef class Problem:
 
 
 cdef class FrankWolfeSettings:
-    cdef readonly long int max_iterations
-    cdef readonly double gap_tolerance
-    cdef readonly double line_search_tolerance
 
     def __cinit__(self, long int max_iterations, double gap_tolerance, double line_search_tolerance):
         self.max_iterations = max_iterations
@@ -79,14 +77,6 @@ cdef class FrankWolfeSettings:
 
 
 cdef class Result:
-    cdef readonly Problem problem
-    cdef readonly FrankWolfeSettings settings
-    cdef readonly PathSet path_set
-    cdef readonly Vector flow
-    cdef readonly Vector cost
-    cdef readonly double gap
-    cdef readonly long int iterations
-    cdef readonly double duration
 
     def __cinit__(self, Problem problem, FrankWolfeSettings settings,
                   PathSet path_set,
@@ -101,10 +91,34 @@ cdef class Result:
         self.iterations = iterations
         self.duration = duration
 
-    def save(self, name):
+    def improve(self):
+        cdef long int k = 0, max_iter = self.settings.max_iterations
+        cdef double gap = self.gap, tol = self.settings.gap_tolerance
+        cdef Vector next_flow = Vector.zeros(self.problem.network.number_of_links())
+        cdef Vector best_path_costs = Vector.zeros(self.problem.demand.number_of_trips())
+        cdef double t0 = now()
+        while k < max_iter and gap > tol:
+            gap = improve(self.problem, self.settings,
+                          self.flow, next_flow, self.cost,
+                          self.path_set, best_path_costs, self.problem.demand.volumes)
+            k += 1
+            # printf("- {iteration: %li, gap: %g}\n", k, gap)
+        t0 = now() - t0
+        self.duration += t0
+        self.iterations += k
+        self.gap = gap
+        printf("solved to average excess cost %g in %li iterations.\n", gap, k)
+        printf("path set stores %li paths using %g GB.\n", self.path_set.number_of_paths(), self.path_set.memory_usage() / 1000000000.0)
+        printf("average timing per iteration %g.\n", k / self.duration)
+        return self
+
+    def save(self, name, timestamp=None):
         """Save the result to a directory."""
-        dirname = os.path.join(name, f"results-{dt.datetime.utcnow().isoformat(timespec='seconds')}")
+        if timestamp is None:
+            timestamp = dt.datetime.utcnow().isoformat(timespec='seconds')
+        dirname = os.path.join(name, f"results-{timestamp}")
         os.makedirs(dirname)
+        print(f"Saving to {dirname}")
         with open(os.path.join(dirname, "metadata.json"), "w") as fp:
             json.dump({
                 'gap': self.gap,
@@ -116,14 +130,20 @@ cdef class Result:
         self.path_set.write(dirname)
         self.settings.save(os.path.join(dirname, 'settings'))
         self.problem.save(dirname)
+        return dirname
+
 
     @staticmethod
-    def load(dirname):
+    def load(dirname, with_pathset=True):
         flow = Vector.copy_of(np.load(os.path.join(dirname, 'flow.npy')))
         cost = Vector.copy_of(np.load(os.path.join(dirname, 'cost.npy')))
         settings = FrankWolfeSettings.load(os.path.join(dirname, 'settings'))
-        path_set = PathSet.load(dirname)
         problem = Problem.load(dirname)
+        if with_pathset:
+            path_set = PathSet.load(dirname)
+        else:
+            n_sources, _ = problem.demand.info()
+            path_set = PathSet(n_sources)
         with open(os.path.join(dirname, "metadata.json")) as fp:
             obj = json.load(fp)
         gap = obj['gap']
@@ -150,7 +170,7 @@ def solve(Problem problem, FrankWolfeSettings settings):
     cdef PathSet paths = PathSet.__new__(PathSet,
                                          problem.demand.number_of_sources())
 
-    cdef double t_loading = 0.0, t_gap = 0.0, t_line_search = 0.0, t_iteration
+    cdef double t_iteration = 0.0
     t0 = now()
 
     printf("Computing initial assignment\n")
@@ -165,45 +185,15 @@ def solve(Problem problem, FrankWolfeSettings settings):
     printf("Computed initial assignment in %g seconds.\n", now() - t0)
     problem.cost_fn.compute_link_cost(flow.vec, cost.vec)
     while k < settings.max_iterations and gap > settings.gap_tolerance:
-        # all or nothing assignment
-        t1 = now()
-        shortest_paths_assignment(problem.network,
-                                  cost,
-                                  problem.demand,
-                                  next_flow,
-                                  paths,
-                                  best_path_costs
-                                  )
-        t = now() - t1
-        t_loading += t
-        #printf("%li: loading time %gs", k, t)
-        t1 = now()
-        # compute gap
-        gap = compute_gap(flow, cost, volume, best_path_costs)
-        t = now() - t1
-        t_gap += t
-        #printf(", gap time %gs", t)
-        t1 = now()
-        # compute search direction (next_flow is now the search direction)
-        igraph_vector_sub(next_flow.vec, flow.vec)
-        # update flow and cost
-        line_search(problem.cost_fn, flow, cost, next_flow, settings.line_search_tolerance)
-        t = now() - t1
-        t_line_search += t
-        #printf(", line search time %gs\n", t)
-        # printf("%li: gap: %g\n", k, gap)
+        gap = improve(problem, settings,
+                      flow, next_flow, cost,
+                      paths, best_path_costs, volume)
         k += 1
-    t_gap /= k
-    t_loading /= k
-    t_line_search /= k
-    t_iteration = t_gap + t_loading + t_line_search
-    printf("path set stores %li paths using %li bytes.\n", paths.number_of_paths(), paths.memory_usage())
-    printf("average timings per iteration %g:\n\tnetwork loading: %g (%g%%)\n\tgap: %g (%g%%)\n\tline search: %g (%g%%)\n",
-           t_iteration,
-           t_loading, 100.0 * t_loading / t_iteration,
-           t_gap, 100.0 * t_gap / t_iteration,
-           t_line_search, 100.0 * t_line_search / t_iteration,
-           )
+        # printf("- {iteration: %li, gap: %g}\n", k, gap)
+    t_iteration = (now() - t0) / k
+    printf("solved to average excess cost %g in %li iterations.\n", gap, k)
+    printf("path set stores %li paths using %g GiB.\n", paths.number_of_paths(), paths.memory_usage() / BYTES_PER_GIBIBYTE)
+    printf("average timing per iteration %g.\n", t_iteration)
     return Result(
         problem,
         settings,
@@ -215,7 +205,29 @@ def solve(Problem problem, FrankWolfeSettings settings):
         now() - t0
     )
 
-# TODO not correct fix.
+cdef inline double improve(Problem problem, FrankWolfeSettings settings,
+                         Vector flow, Vector next_flow, Vector cost,
+                         PathSet paths,
+                         Vector best_path_costs, Vector volume):
+    # all or nothing assignment
+    shortest_paths_assignment(problem.network,
+                              cost,
+                              problem.demand,
+                              next_flow,
+                              paths,
+                              best_path_costs
+                              )
+    #printf("%li: loading time %gs", k, t)
+    # compute gap
+    gap = compute_gap(flow, cost, volume, best_path_costs)
+    #printf(", gap time %gs", t)
+    # compute search direction (next_flow is now the search direction)
+    igraph_vector_sub(next_flow.vec, flow.vec)
+    # update flow and cost
+    line_search(problem.cost_fn, flow, cost, next_flow, settings.line_search_tolerance)
+    #printf(", line search time %gs\n", t)
+    return gap
+
 cdef double compute_gap(Vector link_flow, Vector link_cost, Vector volume, Vector best_path_cost):
     """Average Excess Cost
 

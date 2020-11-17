@@ -101,8 +101,17 @@ def network_data_from_shp(directory: str,
             u_i = node_id_map[u]
             v_i = node_id_map[v]
             cc_links[(u_i, v_i)] = link
+    cc_zones = {}
+    for zone_id, old_links in zones.items():
+        new_links = []
+        for old_u, old_v in old_links:
+            if old_u in node_id_map and old_v in node_id_map:
+                new_links.append((node_id_map[old_u], node_id_map[old_v]))
+        if new_links:
+            cc_zones[zone_id] = new_links
     network.add_links_from(list(cc_links.keys()))
-    zone_nodes = valmap(extract_virtual_node(network), zones)
+    zone_nodes = valmap(extract_virtual_node(network), cc_zones)
+    print(f"number of zone nodes: {len(zone_nodes)}")
     log.info(f"Created igraph road network: {network.info()}")
     return NetworkData(
         network,
@@ -119,6 +128,7 @@ def _csv_files(directory: str) -> Iterable[str]:
 
 def travel_demand(network: NetworkData, directory: str) -> Trips:
     od_matrix = sum(map(read_csv, _csv_files(directory)))
+    print(f"Recovered {od_matrix.shape} OD matrix with {np.count_nonzero(od_matrix)} nonzero od pair volumes.")
     trips = Trips()
     for d in to_demand(od_matrix):
         origin = network.zones.get(d.from_zone)
@@ -132,15 +142,13 @@ def travel_demand(network: NetworkData, directory: str) -> Trips:
                 destination,
                 d.volume
             )
+    print(f"Found {len(trips.trips)} OD pairs.")
     return trips
 
 
 @curry
 def extract_virtual_node(network: DiGraph,
                          virtual_links: List[Tuple[int, int]]) -> Optional[int]:
-    ns = set()
-    for l in virtual_links:
-        ns.update(l)
     it = iter(virtual_links)
     s = set(next(it))
     for l in it:

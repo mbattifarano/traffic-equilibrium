@@ -34,12 +34,13 @@ cdef extern from "shortest_paths.c":
     int get_shortest_paths_bellman_ford(
             igraph_t *graph,
             dang_t* path_trie,
-            igraph_real_t *path_costs, # cost of each path
+            igraph_vector_t *path_costs, # cost of each path
             long int source,
             igraph_vs_t to,
             igraph_vector_t *weights,
             igraph_real_t *link_flow,
-            igraph_real_t *volumes
+            igraph_vector_t *volumes,
+            igraph_vector_t *trip_indices,
     ) nogil
 
     int dqueue_push_front(
@@ -111,27 +112,20 @@ cdef void shortest_paths_assignment(DiGraph network,
         targets_vec = <igraph_vector_t*> vector_ptr_get(demand.targets.vec, i)
         number_of_targets = vector_len(targets_vec)
         if number_of_targets > 0:
-            ##printf("%li getting trip indices...", i)
             trip_indices = <igraph_vector_t*> vector_ptr_get(demand.trip_index.vec, i)
-            first_trip_index = <igraph_integer_t> vector_get(trip_indices, 0)
-            volumes_for_source = igraph_vector_e_ptr(demand.volumes.vec, first_trip_index)
-            costs_for_source = igraph_vector_e_ptr(best_path_cost.vec, first_trip_index)
-            ##printf("%li getting paths for source...", i)
-            # get the linear index of the first trip
             targets_vs = igraph_vss_vector(targets_vec)
             thread_id = threadid()
-            # populate paths with shortest paths vectors (of edge ids)
             _flow = <igraph_real_t*> igraph_matrix_e_ptr(&_flows, 0, thread_id)
-            #printf("%li getting shortest paths... ", i)
             get_shortest_paths_bellman_ford(
                 network.graph,
                 paths.get_trie(i),
-                costs_for_source,
+                best_path_cost.vec,
                 source,
                 targets_vs,
                 cost.vec,
                 _flow,
-                volumes_for_source
+                demand.volumes.vec,
+                trip_indices,
             )
             #printf("got shortest paths for %li... ", i)
     # sum the thread local link flows into the final link flow

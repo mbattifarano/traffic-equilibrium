@@ -1,11 +1,18 @@
 from libc.stdlib cimport free, malloc, calloc
 from libc.stdio cimport stdout, setbuf, printf, fopen, fclose, FILE
-from .dang cimport dang_t, dang_init, dang_print, dang_write, DANG_SET_SOURCE, dang_size, dang_upsert_path
+from .dang cimport dang_t, dang_init, dang_print, dang_write, dang_write_gz, DANG_SET_SOURCE, dang_size, dang_upsert_path, dang_destroy
+from .zlib cimport gzopen, gzclose, gzFile
 
 import os
 import yaml
 
 import numpy as np
+
+
+cdef extern from "<stdio.h>" nogil:
+    FILE *popen(const char *command, const char *_type)
+    int pclose(FILE *stream)
+
 
 cdef class PathSet:
 
@@ -20,7 +27,10 @@ cdef class PathSet:
             DANG_SET_SOURCE(dang, i)
 
     def __dealloc__(self):
+        cdef size_t i = 0
         if self.tries:
+            for i in range(self.number_of_sources):
+                dang_destroy(self.tries + i)
             free(self.tries)
 
     cdef dang_t* get_trie(self, size_t i) nogil:
@@ -32,11 +42,21 @@ cdef class PathSet:
             dang_print(self.get_trie(i))
 
     def write(self, dirname):
+        fname = os.path.join(dirname, "paths.bin")
         cdef size_t i = 0
-        cdef FILE *fp = fopen(os.path.join(dirname, "paths.yaml").encode("ascii"), b"w")
+        cdef FILE *pipe = popen(f"gzip - > {fname}.gz".encode('ascii'), "w");
         for i in range(self.number_of_sources):
-            dang_write(self.get_trie(i), fp, False)
-        fclose(fp)
+            dang_write(self.get_trie(i), pipe, False)
+        pclose(pipe)
+
+    def clear(self):
+        cdef size_t i = 0
+        cdef dang_t *dang
+        if self.tries:
+            for i in range(self.number_of_sources):
+                dang = <dang_t*> self.tries + i
+                dang_destroy(dang)
+                DANG_SET_SOURCE(dang, i)
 
     @staticmethod
     def load(dirname):
@@ -47,16 +67,16 @@ cdef class PathSet:
         cdef dang_t *dang
         cdef PathSet path_set = PathSet.__new__(PathSet, number_of_sources)
         cdef unsigned int [:] edges
+        # data: [source, [[target, [edge, ...]], ...]]
         for data in obj:
-            source = data['source']
+            source, paths = data
             dang = path_set.get_trie(source)
-            for path in data['paths']:
-                target = path['target']
-                _edges = np.array(path['edges'], dtype=np.uintc)
+            for path in paths:
+                target, _edges = path
+                _edges = np.array(_edges, dtype=np.uintc)
                 edges = _edges
                 dang_upsert_path(dang, &edges[0], len(_edges), target)
         return path_set
-
 
     cdef long int memory_usage(self) nogil:
         cdef size_t i = 0

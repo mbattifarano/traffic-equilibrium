@@ -1,4 +1,5 @@
 import os
+import time
 import warnings
 import numpy as np
 from traffic_equilibrium.tntp import (
@@ -34,18 +35,16 @@ problem = Problem(
 print(problem.network.info())
 
 settings = FrankWolfeSettings(
-    1000000,
+    100000,
     1e-6,
     1e-10,
 )
 
-print("Solving Sioux Falls UE")
-result = solve(problem, settings)
-print(f"Solved Sioux Falls ue to gap {result.gap} in {result.iterations} iterations in {result.duration} seconds ({result.iterations/result.duration} it/s).")
-flow = result.flow.to_array()
-cost = result.cost.to_array()
-print(f"link flow max absolute percentage error: {100*np.max(abs(flow - expected_flow)/expected_flow)}%.")
-assert np.linalg.norm((flow - expected_flow)/expected_flow) <= 0.01
-assert flow.dot(expected_cost) / expected_flow.dot(expected_cost) - 1.0 <= 1e-3
-print("saving results")
-result.save(os.path.join("examples", "results", "sioux-falls-ue"))
+if __name__ == '__main__':
+    print("Solving sioux falls ue")
+    result = solve(problem, settings)
+    print(f"Solved pittsburgh ue to gap {result.gap} in {result.iterations} iterations in {result.duration} seconds ({result.iterations/result.duration} it/s).")
+    print("Saving results")
+    t0 = time.time()
+    result.save('examples/results/sioux-falls-ue', 0)
+    print(f"saved results in {time.time()-t0} seconds.")

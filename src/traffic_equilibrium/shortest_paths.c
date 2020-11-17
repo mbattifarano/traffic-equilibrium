@@ -32,12 +32,13 @@ static int dqueue_push_front(igraph_dqueue_t *q, igraph_real_t elem) {
 static int get_shortest_paths_bellman_ford(
 	const igraph_t *graph,
 	dang_t* path_trie,
-	igraph_real_t *path_costs, // cost of each path (optional)
+	igraph_vector_t *path_costs,
 	const long int source,
 	igraph_vs_t to,
 	const igraph_vector_t *weights,
 	igraph_real_t *link_flow,
-	igraph_real_t *volumes
+	igraph_vector_t *volumes,
+	igraph_vector_t *trip_indices
 ) {
 	/* Implementation details:
 	- `parents` assigns the inbound edge IDs of all vertices in the
@@ -50,7 +51,8 @@ static int get_shortest_paths_bellman_ford(
 	*/
 	long int no_of_nodes = igraph_vcount(graph);
 	igraph_lazy_inclist_t inclist;
-	long int i, k, nlen, nei, size, act, edge, head;
+	long int i, k, nlen, nei, size, act, edge, head, trip_idx;
+	double volume;
 
 	igraph_dqueue_t Q1, Q2;
 	igraph_dqueue_t *Q;
@@ -152,12 +154,15 @@ static int get_shortest_paths_bellman_ford(
 			u = IGRAPH_VIT_GET(tovit);
 			u_data = (data + u);
 
+			trip_idx = VECTOR(*trip_indices)[i];
+			volume = VECTOR(*volumes)[trip_idx];
+
 			//igraph_vector_t *evec = 0;
 			//evec = VECTOR(*edges)[i];
 			//igraph_vector_clear(evec);
 
 			if (path_costs) {
-				path_costs[i] = u_data->distance - 1.0;
+				VECTOR(*path_costs)[trip_idx] = u_data->distance - 1.0;
 			}
 
 			igraph_vector_resize(&path, 0);
@@ -167,11 +172,12 @@ static int get_shortest_paths_bellman_ford(
 				// push edge onto stack
 				igraph_vector_push_back(&path, edge);
 				// Add volume to link flow vector
-				link_flow[edge] += volumes[i];
+				link_flow[edge] += volume;
 				act = IGRAPH_OTHER(graph, edge, act);
 			}
 			size = igraph_vector_size(&path);
 
+			// TODO: use leveldb c api to write directly to leveldb instead of path trie
 			k = 0;
 			walk = &(path_trie->root);
 			prev = walk;
@@ -181,7 +187,7 @@ static int get_shortest_paths_bellman_ford(
 				walk = dang_append_to_path(path_trie, walk, edge, &k);
 			}
 			// store target node id as value
-			dang_mark_end(path_trie, prev, u);
+			dang_mark_end(path_trie, prev, trip_idx);
 		}
 	}
 
@@ -189,6 +195,7 @@ static int get_shortest_paths_bellman_ford(
 	igraph_vit_destroy(&tovit);
 	igraph_dqueue_destroy(&Q1);
 	igraph_dqueue_destroy(&Q2);
+	igraph_vector_destroy(&path);
 	igraph_lazy_inclist_destroy(&inclist);
 	igraph_Free(data);
 

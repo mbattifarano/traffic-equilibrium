@@ -81,6 +81,9 @@ cdef class OrgnDestDemand:
         cdef igraph_vector_t* _index_by_target = <igraph_vector_t*> vector_ptr_get(self.trip_index.vec, source)
         return <long int> vector_get(_index_by_target, target)
 
+    def info(self):
+        return self.number_of_sources(), self.number_of_trips()
+
     def save(self, dirname):
         cdef long int i = 0
         cdef igraph_vector_t *_targets
