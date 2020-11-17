@@ -5,6 +5,7 @@ from traffic_equilibrium.graph import DiGraph
 from traffic_equilibrium.trips import Trips
 from traffic_equilibrium.vector import Vector
 from traffic_equilibrium.link_cost import LinkCostMarginalLinear
+from traffic_equilibrium.pathdb import PathDB
 from traffic_equilibrium.solver import Problem, FrankWolfeSettings, solve
 
 net = DiGraph("braess")
@@ -36,12 +37,12 @@ settings = FrankWolfeSettings(
     1e-8,
 )
 
+paths = PathDB(os.path.join("examples/results/braess-paths.db"))
+
 print("Solving braess ue")
-result = solve(problem, settings)
+result = solve(problem, settings, paths)
 print(f"Solved braess ue to gap {result.gap} in {result.iterations} iterations in {result.duration} seconds ({result.iterations/result.duration} it/s).")
 print(f"link flow = {result.flow.to_array()}")
 print(f"link cost = {result.cost.to_array()}")
-print("paths found:")
-result.path_set.display()
 print("saving results")
 result.save(os.path.join("examples", "results", "braess-so"))
