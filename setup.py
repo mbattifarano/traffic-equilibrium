@@ -35,7 +35,9 @@ ext_modules = [
             "-ftree-vectorize",
             #"-axCOMMON-AVX512"
         ],
-        extra_link_args=["-Ofast", "-fopenmp"],
+        extra_link_args=[
+            "-Ofast",
+            "-fopenmp"],
     )
 ]
 

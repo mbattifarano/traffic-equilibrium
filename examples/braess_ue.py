@@ -35,6 +35,7 @@ settings = FrankWolfeSettings(
     1000,
     1e-6,
     1e-8,
+    100
 )
 
 paths = PathDB(os.path.join("examples/results/braess-paths.db"))

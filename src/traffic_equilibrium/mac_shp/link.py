@@ -1,5 +1,6 @@
 from typing import NamedTuple, Mapping
-from .node import Coordinate
+from .node import Coordinate, CoordinateSchema
+from marshmallow import Schema, fields
 import inspect
 
 INF_CAPACITY = 9999
@@ -47,3 +48,34 @@ class Link(NamedTuple):
             k: getattr(self, k)
             for k in self.extended_fields()
         }
+
+    def serialize(self):
+        try:
+            return link_schema.dump(self)
+        except:
+            print(self)
+            raise
+
+    @classmethod
+    def deserialize(cls, data):
+        return cls(**link_schema.load(data))
+
+
+class GeometrySchema(Schema):
+    type = fields.String()
+    coordinates = fields.List(fields.Tuple((fields.Float(), fields.Float)))
+
+
+class LinkSchema(Schema):
+    id = fields.Integer()
+    length = fields.Float()
+    speed = fields.Float()
+    capacity = fields.Float()
+    zone = fields.Integer()
+    lanes = fields.Integer()
+    from_point = fields.Nested(CoordinateSchema)
+    to_point = fields.Nested(CoordinateSchema)
+    geometry = fields.Nested(GeometrySchema)
+
+
+link_schema = LinkSchema()

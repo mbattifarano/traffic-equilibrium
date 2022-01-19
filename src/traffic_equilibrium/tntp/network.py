@@ -8,7 +8,7 @@ from io import FileIO
 import numpy as np
 from marshmallow import Schema, fields, post_load
 
-from traffic_equilibrium.link_cost import LinkCost, LinkCostBPR
+from traffic_equilibrium.link_cost import LinkCost, LinkCostBPR, LinkCostMarginalBPR
 from traffic_equilibrium.graph import DiGraph
 from traffic_equilibrium.vector import Vector
 
@@ -53,7 +53,15 @@ class TNTPNetwork:
         )
 
     def to_marginal_link_cost_function(self, fleet_link_flow=None) -> LinkCost:
-        raise NotImplementedError
+        links = self._links_as_columns()
+        alpha = links.b[0]
+        beta = links.power[0]
+        return LinkCostMarginalBPR(
+            alpha,
+            beta,
+            Vector.copy_of(links.capacity),
+            Vector.copy_of(links.free_flow_time),
+        )
 
     def to_road_network(self) -> DiGraph:
         g = DiGraph(self.name)
@@ -63,6 +71,7 @@ class TNTPNetwork:
              self.node_index.index_of(link.to_node))
             for link in self.links
         ])
+        g.set_link_info(dict(enumerate(self.links)))
         return g
 
 
@@ -113,6 +122,9 @@ class Link(NamedTuple):
     @property
     def id(self) -> Tuple[int, int]:
         return self.from_node, self.to_node
+
+    def serialize(self):
+        return LinkSchema().dump(self)
 
 
 class LinkSchema(Schema):

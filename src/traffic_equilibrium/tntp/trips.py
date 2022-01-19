@@ -43,6 +43,13 @@ class TNTPTrips:
     def total_demand(self) -> float:
         return sum(t.volume for t in self.trips)
 
+    def scale_volume(self, factor: float):
+        """scale the volume by a factor"""
+        if factor <= 0:
+            raise Exception("Volume scale factor must be strictly positive")
+        trips = [t._replace(volume=factor * t.volume) for t in self.trips]
+        return TNTPTrips(self.meta_data, trips)
+
 
 class MetaData(NamedTuple):
     n_zones: int

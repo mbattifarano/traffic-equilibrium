@@ -33,8 +33,7 @@ typedef unsigned int storage_t;
 
 static int get_shortest_paths_bellman_ford(
 	const igraph_t *graph,
-	leveldb_t *paths,
-	leveldb_writeoptions_t *writeoptions,
+	leveldb_writebatch_t *paths,
 	igraph_vector_t *path_costs,
 	const long int source,
 	igraph_vs_t to,
@@ -149,7 +148,6 @@ static int get_shortest_paths_bellman_ford(
 	}
 
 	/* populate edges and path costs */
-	char *error = NULL;
 	if (paths) {
 		for (IGRAPH_VIT_RESET(tovit), i = 0; !IGRAPH_VIT_END(tovit); IGRAPH_VIT_NEXT(tovit), i++) {
 			u = IGRAPH_VIT_GET(tovit);
@@ -176,15 +174,10 @@ static int get_shortest_paths_bellman_ford(
 				link_flow[edge] += volume;
 				act = IGRAPH_OTHER(graph, edge, act);
 			}
-			leveldb_put(paths, writeoptions,
+			leveldb_writebatch_put(paths,
 					    (char*) path, size * sizeof(storage_t),
-					    (char*) &trip_idx, sizeof(trip_idx),
-					    &error
+					    (char*) &trip_idx, sizeof(trip_idx)
 			);
-			if (error) {
-				fprintf(stderr, "Error in leveldb_put: %s", error);
-				free(error);
-			}
 		}
 	}
 
@@ -197,4 +190,191 @@ static int get_shortest_paths_bellman_ford(
 	free(path);
 
 	return 0;
+}
+
+static int get_shortest_paths(
+	const igraph_t *graph,
+	igraph_vector_ptr_t *paths, 	// A vector of pointers to paths, one per trip
+	igraph_vector_t *path_costs,	// A vector of costs, one per trip
+	const long int source,			// the source node
+	igraph_vs_t to,   				// the target nodes
+	const igraph_vector_t *weights,	// the costs of each edge
+	igraph_vector_t *trip_indices	// the trip index of each target
+) {
+	/* Implementation details:
+	- `parents` assigns the inbound edge IDs of all vertices in the
+	shortest path tree to the vertices. In this implementation, the
+	edge ID + 1 is stored, zero means unreachable vertices.
+	- we don't use IGRAPH_INFINITY in the distance vector during the
+	computation, as IGRAPH_FINITE() might involve a function call
+	and we want to spare that. So we store distance+1.0 instead of
+	distance, and zero denotes infinity.
+	*/
+	long int no_of_nodes = igraph_vcount(graph);
+	igraph_lazy_inclist_t inclist;
+	long int i, k, nlen, nei, act, edge, head, trip_idx;
+	igraph_vector_t *path;
+
+	igraph_dqueue_t Q1, Q2;
+	igraph_dqueue_t *Q;
+	long int q2_count = 1, q1_count = 0;
+	igraph_vit_t tovit;
+
+	igraph_vector_t *neis;
+	node_data_t *data = igraph_Calloc(no_of_nodes, node_data_t);
+
+	long int u, v;
+	int empty;
+	node_data_t *u_data, *v_data;
+	igraph_real_t dist_to_v, tmp_dist;
+
+	igraph_dqueue_init(&Q1, no_of_nodes);
+	igraph_dqueue_init(&Q2, no_of_nodes);
+	igraph_lazy_inclist_init(graph, &inclist, IGRAPH_OUT);
+	igraph_vit_create(graph, to, &tovit);
+
+	/* bellman-ford */
+	igraph_dqueue_push(&Q2, source);
+	u_data = (data + source);
+	u_data->enqueued = 1;
+	u_data->visited = 1;
+	u_data->distance = 1.0;
+
+	/* Run shortest paths */
+	while (q2_count + q1_count) {
+		if (q1_count) {
+			Q = &Q1;
+			q1_count--;
+		} else {
+			Q = &Q2;
+			q2_count--;
+		}
+		u = (long int) igraph_dqueue_pop(Q);
+		u_data = (data + u);
+
+		u_data->enqueued--;
+
+		neis = igraph_lazy_inclist_get(&inclist, (igraph_integer_t) u);
+		nlen = igraph_vector_size(neis);
+
+		for (k = 0; k < nlen; k++) {
+			nei = (long int) VECTOR(*neis)[k];
+			v = IGRAPH_OTHER(graph, nei, u);
+			v_data = (data + v);
+			dist_to_v = v_data->distance;
+			tmp_dist = u_data->distance + VECTOR(*weights)[nei];
+			if ((tmp_dist < dist_to_v) || (dist_to_v == 0.0) ) {
+				/* relax the edge */
+				v_data->distance = tmp_dist;
+				v_data->parent = nei + 1;
+
+				if (!(v_data->enqueued)) {
+					v_data->enqueued++;
+
+					/* Pape's rule + SLF
+					 *
+					 * If a node has been visited previously, add it to Q1
+					 * else, add it to Q2.
+					 * If the label is smaller than the head label push it to
+					 * the front of the queue, else, push to the back
+					 */
+					if (v_data->visited) {
+						Q = &Q1;
+						empty = (q1_count == 0);
+						q1_count++;
+					} else {
+						Q = &Q2;
+						empty = (q2_count == 0);
+						q2_count++;
+						v_data->visited = 1;
+					}
+
+					if (empty) {
+						igraph_dqueue_push(Q, v);
+					} else {
+						head = (long int) igraph_dqueue_head(Q);
+						if ( tmp_dist < ((data + head)->distance) ) {
+							dqueue_push_front(Q, v);
+						} else {
+							igraph_dqueue_push(Q, v);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/* populate edges and path costs */
+	if (paths) {
+		for (IGRAPH_VIT_RESET(tovit), i = 0; !IGRAPH_VIT_END(tovit); IGRAPH_VIT_NEXT(tovit), i++) {
+			u = IGRAPH_VIT_GET(tovit);
+			u_data = (data + u);
+
+			trip_idx = VECTOR(*trip_indices)[i];
+			path = VECTOR(*paths)[trip_idx];
+			igraph_vector_clear(path);
+
+			if (path_costs) {
+				VECTOR(*path_costs)[trip_idx] = u_data->distance - 1.0;
+			}
+
+			act = u;
+			while ((data + act)->parent) {
+				edge = (data + act)->parent - 1;
+				// store edges in path (the paths are stored in reverse)
+				igraph_vector_push_back(path, edge);
+				act = IGRAPH_OTHER(graph, edge, act);
+			}
+		}
+	}
+
+	/* de-allocate */
+	igraph_vit_destroy(&tovit);
+	igraph_dqueue_destroy(&Q1);
+	igraph_dqueue_destroy(&Q2);
+	igraph_lazy_inclist_destroy(&inclist);
+	igraph_Free(data);
+
+	return 0;
+}
+
+static int get_shortest_paths_single(
+	const igraph_t *graph,
+	igraph_vector_t *path,
+	igraph_real_t *cost,
+	const long int source,
+	const long int to,
+	const igraph_vector_t *weights
+) {
+	int result;
+
+	igraph_vector_ptr_t paths;
+	igraph_vector_ptr_init(&paths, 1);
+	VECTOR(paths)[0] = path;
+
+	igraph_vector_t path_costs;
+	igraph_vector_init(&path_costs, 1);
+
+	igraph_vs_t targets = igraph_vss_1(to);
+
+	igraph_vector_t trip_indices;
+	igraph_vector_init(&trip_indices, 1);
+	VECTOR(trip_indices)[0] = 0;
+
+	result = get_shortest_paths(
+		graph,
+		&paths,
+		&path_costs,
+		source,
+		targets,
+		weights,
+		&trip_indices
+	);
+
+	*cost = VECTOR(path_costs)[0];
+
+	igraph_vector_ptr_destroy(&paths);
+	igraph_vector_destroy(&path_costs);
+	igraph_vector_destroy(&trip_indices);
+	return result;
 }

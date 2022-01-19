@@ -14,6 +14,8 @@ cdef class Trips:
     cdef dict source_index
 
     cpdef void append(self, graph_index_t source, graph_index_t target, igraph_real_t volume)
+    cpdef igraph_real_t total_volume(self)
+    cpdef int number_of_trips(self)
     cpdef OrgnDestDemand compile(self)
 
 

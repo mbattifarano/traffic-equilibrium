@@ -33,12 +33,20 @@ cdef class DiGraph:
         cdef igraph_integer_t number_of_nodes = 0
         cdef igraph_bool_t is_directed = 1
         self.name = name
+        self.link_info = {}
+        self.zone_info = {}
         self.graph = <igraph_t*> malloc(sizeof(igraph_t))
         igraph_empty(
             self.graph,
             number_of_nodes,
             is_directed
         )
+
+    cpdef void set_link_info(self, dict link_info):
+        self.link_info = link_info
+
+    cpdef void set_zone_info(self, dict zone_info):
+        self.zone_info = zone_info
 
     def __dealloc__(self):
         if self.graph is not NULL:
@@ -111,12 +119,16 @@ cdef class DiGraph:
         for eid in range(n):
             igraph_edge(self.graph, eid, &u, &v)
             edgelist.append((int(u), int(v)))
+        data = {
+            'name': self.name,
+            'number_of_nodes': self.number_of_nodes(),
+            'edges': edgelist,
+            'link_info': {int(_eid): serialize_link(link)
+                          for _eid, link in self.link_info.items()},
+            'zone_info': self.zone_info
+        }
         with open(os.path.join(dirname, f"network.json"), "w") as fp:
-            json.dump({
-                'name': self.name,
-                'number_of_nodes': self.number_of_nodes(),
-                'edges': edgelist,
-            }, fp, indent=2)
+            json.dump(data, fp, indent=2)
 
     @staticmethod
     def load(dirname):
@@ -125,4 +137,13 @@ cdef class DiGraph:
         cdef DiGraph network = DiGraph.__new__(DiGraph, data["name"])
         network.add_nodes(data["number_of_nodes"])
         network.add_links_from(data["edges"])
+        network.set_link_info(data.get("link_info", {}))
+        network.set_zone_info(data.get("zone_info", {}))
         return network
+
+
+def serialize_link(link):
+    if isinstance(link, dict):
+        return link
+    else:
+        return link.serialize()

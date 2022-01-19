@@ -9,3 +9,5 @@ src/**/*.c
 src/**/*.so
 *.html
 examples/results
+**/*.pkl
+**/*.log

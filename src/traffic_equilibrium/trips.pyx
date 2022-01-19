@@ -25,10 +25,20 @@ cdef class Trips:
         self.source_index = {}
 
     cpdef void append(self, graph_index_t source, graph_index_t target, igraph_real_t volume):
-        self.trips.append(Trip.__new__(Trip, source, target, volume))
-        if source not in self.source_index:
-            self.source_index[source] = {}
-        self.source_index[source][target] = volume
+        if source != target and volume > 0.0:
+            self.trips.append(Trip.__new__(Trip, source, target, volume))
+            if source not in self.source_index:
+                self.source_index[source] = {}
+            self.source_index[source][target] = volume
+
+    cpdef igraph_real_t total_volume(self):
+        cdef igraph_real_t total = 0
+        for trip in self.trips:
+            total += trip.volume
+        return total
+
+    cpdef int number_of_trips(self):
+        return len(self.trips)
 
     cpdef OrgnDestDemand compile(self):
         cdef long int number_of_sources = len(self.source_index)
@@ -83,6 +93,23 @@ cdef class OrgnDestDemand:
 
     def info(self):
         return self.number_of_sources(), self.number_of_trips()
+
+    def to_trip_tuples(self):
+        cdef list trips = []
+        cdef long int trip_id = 0
+        cdef long int i, j, source_id, target_id
+        cdef long int n_sources = self.number_of_sources(), n_targets
+        cdef igraph_vector_t* targets
+        for i in range(n_sources):
+            source_id = <long int> vector_get(self.sources.vec, i)
+            targets = <igraph_vector_t*> vector_ptr_get(self.targets.vec, i)
+            n_targets = vector_len(targets)
+            for j in range(n_targets):
+                target_id = <long int> vector_get(targets, j)
+                volume = vector_get(self.volumes.vec, trip_id)
+                trips.append((int(trip_id), int(source_id), int(target_id), float(volume)))
+                trip_id += 1
+        return trips
 
     def save(self, dirname):
         cdef long int i = 0

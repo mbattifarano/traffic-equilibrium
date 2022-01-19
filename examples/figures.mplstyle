@@ -1,0 +1,31 @@
+axes.grid: True
+axes.grid.axis: y
+
+grid.alpha: 0.8
+grid.linestyle: -
+
+axes.axisbelow: True
+axes.spines.left:   False
+axes.spines.right:   False
+axes.spines.top:   False
+axes.titlesize: 14
+axes.titleweight: bold
+axes.labelsize: 12
+axes.labelweight: bold
+
+ytick.left: False
+ytick.labelsize: 10
+xtick.labelsize: 10
+
+
+lines.linewidth: 4
+lines.markersize: 8.0
+
+font.size: 14
+font.weight: bold
+
+figure.figsize: 6.5, 3
+
+legend.fontsize: 12
+legend.title_fontsize: 12
+legend.markerscale: 0.8

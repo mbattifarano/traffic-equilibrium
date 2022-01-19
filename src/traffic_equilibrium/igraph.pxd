@@ -86,9 +86,13 @@ cdef extern from "igraph.h" nogil:
     int igraph_vector_init_seq(igraph_vector_t* vector, igraph_real_t start, igraph_real_t stop)
     int igraph_vector_copy(igraph_vector_t* target, igraph_vector_t* source)
     void igraph_vector_destroy(igraph_vector_t* vector)
+    void igraph_vector_clear(igraph_vector_t* v)
+    int igraph_vector_reserve(igraph_vector_t* v, long int size)
 
     int igraph_vector_append(igraph_vector_t *to_vec,
                              const igraph_vector_t *from_vec)
+    bint igraph_vector_all_e(const igraph_vector_t *lhs,
+        const igraph_vector_t *rhs)
 
     int igraph_vector_ptr_init(igraph_vector_ptr_t* vector, long int length)
     igraph_vector_ptr_t* igraph_vector_ptr_view (igraph_vector_ptr_t *v, void **data, long int length)
@@ -96,6 +100,7 @@ cdef extern from "igraph.h" nogil:
     void igraph_vector_ptr_set(igraph_vector_ptr_t* vector, long int at, void* value)
     void* igraph_vector_ptr_e(igraph_vector_ptr_t* vector, long int at)
     long int igraph_vector_ptr_size(igraph_vector_ptr_t* vector)
+    void igraph_vector_ptr_clear(igraph_vector_ptr_t* v)
     int igraph_vector_ptr_append(igraph_vector_ptr_t* source, igraph_vector_ptr_t* target )
     int igraph_vector_ptr_push_back(igraph_vector_ptr_t* vector, void* element)
     void* igraph_vector_ptr_pop_back(igraph_vector_ptr_t* vector)
@@ -103,6 +108,7 @@ cdef extern from "igraph.h" nogil:
     int igraph_vector_ptr_resize(igraph_vector_ptr_t* vector, long int newsize)
     igraph_finally_func_t* igraph_vector_ptr_set_item_destructor(igraph_vector_ptr_t *v, igraph_finally_func_t *func)
     void igraph_vector_ptr_destroy_all(igraph_vector_ptr_t* v)
+    void igraph_vector_ptr_destroy(igraph_vector_ptr_t* v)
 
     int igraph_vector_bool_init(igraph_vector_bool_t* vector, long int length)
     int igraph_vector_bool_push_back(igraph_vector_bool_t* vector, igraph_bool_t element)
@@ -134,6 +140,8 @@ cdef extern from "igraph.h" nogil:
     igraph_real_t* igraph_vector_e_ptr(const igraph_vector_t* v, long int pos)
     void igraph_vector_set(igraph_vector_t* vector, long int position, igraph_real_t value)
     int igraph_vector_update(igraph_vector_t* target, igraph_vector_t* source)
+    int igraph_vector_push_back(igraph_vector_t* v, igraph_real_t e)
+    void igraph_vector_remove(igraph_vector_t *v, long int elem)
 
     void igraph_vector_add_constant(igraph_vector_t* v, igraph_real_t value)
     void igraph_vector_scale(igraph_vector_t* v, igraph_real_t value)
@@ -145,6 +153,8 @@ cdef extern from "igraph.h" nogil:
     int igraph_vector_sum(igraph_vector_t* v)
     igraph_real_t igraph_vector_min(igraph_vector_t* v)
     igraph_real_t igraph_vector_max(igraph_vector_t* v)
+
+    int igraph_vector_resize(igraph_vector_t* v, long int newsize)
 
     # graph construction
     int igraph_empty(igraph_t* graph, igraph_integer_t n, igraph_bool_t directed)
@@ -186,6 +196,14 @@ cdef extern from "igraph.h" nogil:
                                            igraph_vector_long_t* predeccessors,
                                            igraph_vector_long_t* inbound_links
                                            )
+
+    int igraph_get_shortest_path_dijkstra(const igraph_t *graph,
+                                      igraph_vector_t *vertices,
+                                      igraph_vector_t *edges,
+                                      igraph_integer_t source,
+                                      igraph_integer_t target,
+                                      const igraph_vector_t *weights,
+                                      igraph_neimode_t mode)
 
     # dqueue stuff
     int igraph_dqueue_init(igraph_dqueue_t* q, long int size)

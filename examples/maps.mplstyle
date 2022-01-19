@@ -1,0 +1,17 @@
+figure.figsize:     12, 8
+
+axes.grid:          False
+axes.spines.left:   False
+axes.spines.bottom: False
+axes.spines.top:    False
+axes.spines.right:  False
+
+xtick.top:          False
+xtick.labeltop:     False
+xtick.bottom:       False
+xtick.labelbottom:  False
+
+ytick.left:         False
+ytick.labelleft:    False
+ytick.right:        False
+ytick.labelright:   False

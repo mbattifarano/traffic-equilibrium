@@ -8,7 +8,5 @@ cdef void shortest_paths_assignment(DiGraph network,
                                     OrgnDestDemand demand,
                                     Vector flow,
                                     PathDB paths,
-                                    Vector best_path_cost
+                                    Vector trip_cost
                                     ) nogil
-
-cdef PointerVector init_path_vectors(OrgnDestDemand demand)

@@ -1,18 +1,23 @@
 from .igraph cimport igraph_vector_t, igraph_real_t
 from .vector cimport Vector
 
+# TODO gradient
 cdef class LinkCost:
     cdef readonly str name
     cdef void compute_link_cost(LinkCost self,
                                 igraph_vector_t* flow,
                                 igraph_vector_t* cost)
 
+    cdef void gradient(self,
+                       igraph_vector_t* flow,
+                       igraph_vector_t* grad)
+
     cpdef Vector compute_link_cost_vector(LinkCost self,
                                           Vector flow)
 
 cdef class LinkCostBPR(LinkCost):
-    cdef igraph_real_t alpha
-    cdef igraph_real_t beta
+    cdef readonly igraph_real_t alpha
+    cdef readonly igraph_real_t beta
     cdef readonly Vector capacity
     cdef readonly Vector free_flow_travel_time
 

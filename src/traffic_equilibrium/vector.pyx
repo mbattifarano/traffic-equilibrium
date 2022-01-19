@@ -14,8 +14,9 @@ from .igraph cimport (
 igraph_vector_ptr_destroy_all,
     igraph_vector_size,
 )
-from .igraph_utils cimport vector_get
+from .igraph_utils cimport vector_get, vector_len
 
+cimport numpy as np
 import numpy as np
 
 # disable stdout buffer (for debugging)
@@ -78,6 +79,9 @@ cdef class Vector:
         for i in range(n):
             _a[i] = vector_get(self.vec, i)
         return a
+
+    def as_array(self):
+        return np.asarray(<np.double_t[:vector_len(self.vec)]> self.vec.stor_begin)
 
     def to_list(self):
         return self.to_array().tolist()

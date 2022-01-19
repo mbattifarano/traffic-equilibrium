@@ -6,9 +6,13 @@ ctypedef unsigned int graph_index_t
 cdef class DiGraph:
     cdef igraph_t* graph
     cdef readonly str name
+    cdef readonly dict link_info
+    cdef readonly dict zone_info
 
     cdef str get_name(DiGraph self)
     cdef void set_name(DiGraph self, str name)
+    cpdef void set_link_info(DiGraph self, dict link_info)
+    cpdef void set_zone_info(DiGraph self, dict zone_info)
     cdef graph_index_t number_of_nodes(DiGraph self) nogil
     cdef graph_index_t number_of_links(DiGraph self) nogil
     cdef void add_nodes(DiGraph self, igraph_integer_t number_of_nodes) nogil

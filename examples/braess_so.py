@@ -32,9 +32,10 @@ problem = Problem(
 )
 
 settings = FrankWolfeSettings(
-    5000,
+    100000,
     1e-6,
     1e-8,
+    10000,
 )
 
 paths = PathDB(os.path.join("examples/results/braess-paths.db"))

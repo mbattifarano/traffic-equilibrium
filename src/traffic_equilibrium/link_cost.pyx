@@ -17,6 +17,9 @@ cdef class LinkCost:
     cdef void compute_link_cost(self, igraph_vector_t* flow, igraph_vector_t* cost):
         pass
 
+    cdef void gradient(self, igraph_vector_t* flow, igraph_vector_t* grad):
+        pass
+
     cpdef Vector compute_link_cost_vector(self, Vector flow):
         cdef Vector cost = Vector.zeros(len(flow))
         self.compute_link_cost(flow.vec, cost.vec)
@@ -52,6 +55,14 @@ cdef class LinkCostBPR(LinkCost):
         self.free_flow_travel_time = free_flow_travel_time
         self.name = "bpr"
 
+    def compute_link_cost_cp(self, link_flow):
+        import cvxpy as cp
+        capacity = self.capacity.to_array()
+        fftt = self.free_flow_travel_time.to_array()
+        a = float(self.alpha)
+        b = float(self.beta)
+        return cp.multiply(fftt, 1 + a * (link_flow / capacity) ** b)
+
     cdef void compute_link_cost(self, igraph_vector_t* flow, igraph_vector_t* cost):
         # all operations write into the first arg
         # accumulate everything into cost
@@ -61,6 +72,15 @@ cdef class LinkCostBPR(LinkCost):
         igraph_vector_scale(cost, self.alpha)    # cost = alpha*(flow/capacity)**beta
         igraph_vector_add_constant(cost, 1.0) # cost = 1 + alpha*(flow/capacity)**beta
         igraph_vector_mul(cost, self.free_flow_travel_time.vec)   # cost = freeflow * (1 + alpha*(flow/capacity)**beta)
+
+    cdef void gradient(self, igraph_vector_t* flow, igraph_vector_t* grad):
+        igraph_vector_update(grad, flow)
+        igraph_vector_div(grad, self.capacity.vec)   # grad = flow/capacity
+        igraph_vector_pow(grad, self.beta-1)       # grad = (flow/capacity)**(beta-1)
+        igraph_vector_div(grad, self.capacity.vec)   # grad = (flow**(beta-1))/(capacity**beta)
+        igraph_vector_mul(grad, self.free_flow_travel_time.vec)   # grad = freeflow * (flow**(beta-1))/(capacity**beta)
+        igraph_vector_scale(grad, self.alpha * self.beta) # grad = freeflow * alpha * beta * flow**(beta-1) / capacity**beta
+
 
     def save(self, name):
         with open(os.path.join(name, "cost_function.json"), "w") as fp:
@@ -93,6 +113,17 @@ cdef class LinkCostMarginalBPR(LinkCostBPR):
         self.free_flow_travel_time = free_flow_travel_time
         self.name = "marginal_bpr"
 
+    def compute_link_cost_cp(self, link_flow):
+        import cvxpy as cp
+        capacity = self.capacity.to_array()
+        fftt = self.free_flow_travel_time.to_array()
+        a = float(self.alpha)
+        b = float(self.beta)
+        return cp.multiply(
+            fftt,
+            1 + (1 + b) * a * (link_flow/capacity)**b
+        )
+
     cdef void compute_link_cost(self, igraph_vector_t *flow,
                                 igraph_vector_t *cost):
         """Compute the marginal link cost of the BPR link cost function."""
@@ -104,6 +135,7 @@ cdef class LinkCostMarginalBPR(LinkCostBPR):
         igraph_vector_add_constant(cost, 1.0)  # cost = 1 + (1 + beta)*alpha*(flow/capacity)**beta
         igraph_vector_mul(cost, self.free_flow_travel_time.vec)   # cost = freeflow * (1 + (1 + beta)*alpha*(flow/capacity)**beta)
 
+
 cdef class LinkCostLinear(LinkCost):
     def __cinit__(self, Vector coefficients, Vector constants):
         self.coefficients = coefficients
@@ -114,6 +146,9 @@ cdef class LinkCostLinear(LinkCost):
         igraph_vector_update(cost, flow)
         igraph_vector_mul(cost, self.coefficients.vec)
         igraph_vector_add(cost, self.constants.vec)
+
+    cdef void gradient(self, igraph_vector_t* flow, igraph_vector_t* grad):
+        igraph_vector_update(grad, self.coefficients.vec)
 
     def save(self, name):
         with open(os.path.join(name, "cost_function.json"), "w") as fp:

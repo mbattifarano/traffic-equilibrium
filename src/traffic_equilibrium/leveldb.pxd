@@ -1,3 +1,5 @@
+from libc.stdint cimport uint8_t
+
 cdef extern from "leveldb/c.h" nogil:
     # types
     ctypedef struct leveldb_t:
@@ -58,14 +60,15 @@ cdef extern from "leveldb/c.h" nogil:
     # options
     leveldb_options_t* leveldb_options_create()
     void leveldb_options_destroy(leveldb_options_t*)
-    void leveldb_options_set_create_if_missing(leveldb_options_t*, unsigned char)
+    void leveldb_options_set_create_if_missing(leveldb_options_t*, uint8_t)
     void leveldb_options_set_write_buffer_size(leveldb_options_t*, size_t)
     void leveldb_options_set_max_file_size(leveldb_options_t*, size_t)
+    void leveldb_options_set_block_size(leveldb_options_t*, size_t)
     
     # write options
     leveldb_writeoptions_t* leveldb_writeoptions_create()
     void leveldb_writeoptions_destroy(leveldb_writeoptions_t*)
-    void leveldb_writeoptions_set_sync(leveldb_writeoptions_t*, unsigned char)
+    void leveldb_writeoptions_set_sync(leveldb_writeoptions_t*, uint8_t)
     
     # read options
     leveldb_readoptions_t* leveldb_readoptions_create()

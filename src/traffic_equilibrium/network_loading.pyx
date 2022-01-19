@@ -6,8 +6,7 @@ from .graph cimport DiGraph
 from .vector cimport Vector, PointerVector
 from .trips cimport OrgnDestDemand
 from .timer cimport now
-from .dang cimport dang_t
-from .leveldb cimport leveldb_t, leveldb_writeoptions_t
+from .leveldb cimport leveldb_writebatch_t
 from .pathdb cimport PathDB
 
 
@@ -35,8 +34,7 @@ from openmp cimport omp_get_max_threads
 cdef extern from "shortest_paths.c":
     int get_shortest_paths_bellman_ford(
             igraph_t *graph,
-            leveldb_t *paths,
-            leveldb_writeoptions_t *writeoptions,
+            leveldb_writebatch_t *paths,
             igraph_vector_t *path_costs, # cost of each path
             long int source,
             igraph_vs_t to,
@@ -84,7 +82,7 @@ cdef void shortest_paths_assignment(DiGraph network,
                                     OrgnDestDemand demand,
                                     Vector flow,
                                     PathDB paths,
-                                    Vector best_path_cost
+                                    Vector trip_cost
                                     ) nogil:
     cdef:
         long int i, j, k, eid, first_trip_index
@@ -121,9 +119,8 @@ cdef void shortest_paths_assignment(DiGraph network,
             _flow = <igraph_real_t*> igraph_matrix_e_ptr(&_flows, 0, thread_id)
             get_shortest_paths_bellman_ford(
                 network.graph,
-                paths.db,
-                paths.writeoptions,
-                best_path_cost.vec,
+                paths.writers[thread_id],
+                trip_cost.vec,
                 source,
                 targets_vs,
                 cost.vec,
@@ -141,23 +138,6 @@ cdef void shortest_paths_assignment(DiGraph network,
     igraph_matrix_destroy(&_flows)
     #printf("\n")
 
-
-# TODO: remove unused
-cdef PointerVector init_path_vectors(OrgnDestDemand demand):
-    cdef long int i, j, n_targets, n_sources = demand.number_of_sources()
-    cdef PointerVector paths = PointerVector.nulls(n_sources)
-    cdef PointerVector paths_for_source
-    igraph_vector_ptr_set_item_destructor(paths.vec, <igraph_finally_func_t*> igraph_vector_ptr_destroy_all)
-    cdef Vector path
-    for i in range(n_sources):
-        n_targets = demand.number_of_targets(i)
-        paths_for_source = PointerVector.nulls(n_targets, owner=False)
-        vector_ptr_set(paths.vec, i, paths_for_source.vec)
-        igraph_vector_ptr_set_item_destructor(paths_for_source.vec, <igraph_finally_func_t*> igraph_vector_destroy)
-        for j in range(n_targets):
-            path = Vector.zeros(0, owner=False)
-            vector_ptr_set(paths_for_source.vec, j, path.vec)
-    return paths
 
 
 def load_network(DiGraph network, Vector cost, OrgnDestDemand demand):
