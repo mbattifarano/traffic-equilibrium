@@ -19,7 +19,7 @@ ext_modules = [
     Extension(
         '.'.join([PACKAGE, '*']),
         [os.path.join(SOURCE_DIR, PACKAGE, f'*.pyx')],
-        libraries=['igraph', 'm', 'dang', 'leveldb', 'gurobi91'],
+        libraries=['igraph', 'm', 'dang', 'leveldb', 'gurobi95'],
         library_dirs=[
             '/usr/local/lib',
         ],

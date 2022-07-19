@@ -119,7 +119,7 @@ cdef void compute_fleet_link_marginal_cost(igraph_vector_t *fmlc,
 
 class CriticalFleetSizeProblem:
     def __init__(self, problem, fleet_path_flow, user_path_flow, fleet_link_flow, user_link_flow, aggregate_link_flow,
-                 fleet_marginal_path_cost, fleet_paths=None):
+                 fleet_marginal_path_cost, fleet_paths=None, weights=None):
         self.problem = problem
         self.fleet_path_flow = fleet_path_flow
         self.user_path_flow = user_path_flow
@@ -128,6 +128,7 @@ class CriticalFleetSizeProblem:
         self.aggregate_link_flow = aggregate_link_flow
         self.fleet_marginal_path_cost = fleet_marginal_path_cost
         self.fleet_paths = fleet_paths
+        self.weights = weights
 
     def solve(self, *args, **kwargs):
         res = self.problem.solve(*args, **kwargs)
@@ -163,6 +164,12 @@ class CriticalFleetSizeProblem:
     def fleet_fraction(self):
         fleet_volume = np.sum(self.fleet_path_flow.value)
         return cp.sum(self.fleet_path_flow).value / self.total_volume()
+
+    def likelihood(self):
+        if self.weights is None:
+            return 0
+        else:
+            return (self.weights @ self.fleet_path_flow).value
 
     def link_flow_error(self):
         return cp.norm2(
@@ -790,6 +797,7 @@ def critical_fleet_size_lp(link_flow, trip_volume, epsilon,
                         link_error_as_constraint=False,
                         cfs_so=True,
                         trip_cost=None,
+                        lambda_=0.0,
                         ):
     n_trips, n_paths = trip_path.shape
     n_links, _ = link_path.shape
@@ -854,9 +862,19 @@ def critical_fleet_size_lp(link_flow, trip_volume, epsilon,
             fleet_marginal_path_cost >= fleet_marginal_path_cost_bound,
             fleet_marginal_path_cost[fleet_paths] <= fleet_marginal_path_cost_bound[fleet_paths] * (1 + epsilon),
         ])
+    if lambda_ > 0.0:
+        excess_cost = np.clip(
+            (link_path.T @ link_cost) * (1 + 1e-2) - (trip_path.T @ trip_cost),
+            0, None)
+        #weights = -np.log(lambda_ * np.exp(-lambda_ * excess_cost))
+        #weights = lambda_ * excess_cost - np.log(lambda_)
+        weights = excess_cost**lambda_
+        #constraints.append(f_fleet[user_paths] == 0.0)
+    else:
+        weights = np.ones(n_paths)
     print("Building cvxpy problem")
     print(f"trip volume = {trip_volume.sum()}")
-    fleet_fraction = cp.sum(f_fleet) #/ trip_volume.sum()
+    fleet_fraction = weights @ f_fleet #/ trip_volume.sum()
     link_flow_error = aggregate_link_flow - link_flow #/ trip_volume.sum()
     total_volume = trip_volume.sum()
     if not link_error_as_constraint:
@@ -873,11 +891,15 @@ def critical_fleet_size_lp(link_flow, trip_volume, epsilon,
         penalty = cp.sum(link_error_bound)
     if beta < np.inf:
         objective = sense(
-            (fleet_fraction + beta * penalty) / total_volume
+            (fleet_fraction + beta * penalty) #/ total_volume
         )
     else:
-        objective = sense(fleet_fraction / total_volume)
-        constraints.append(penalty == 0.0)
+        link_flow_abs_error = abs(link_flow - projected_link_flow).max()
+        objective = sense(fleet_fraction) # / total_volume)
+        constraints.extend([
+            link_flow_error <= link_flow_abs_error,
+            link_flow_error >= -link_flow_abs_error
+        ])
     return CriticalFleetSizeProblem(
         cp.Problem(
             objective,
@@ -889,6 +911,7 @@ def critical_fleet_size_lp(link_flow, trip_volume, epsilon,
         user_link_flow,
         link_flow,
         fleet_marginal_path_cost,
+        weights=weights if lambda_ > 0.0 else None,
     )
 
 def abs_relu(threshold, x):

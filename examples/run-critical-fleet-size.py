@@ -39,7 +39,7 @@ HOUR = 60 * 60
 @click.option('--col-gen/--no-col-gen', default=True)
 @click.option('--cfs-so/--no-cfs-so', default=True)
 @click.option('--use-all-paths', is_flag=True)
-@click.option('--beta', type=float, default=1.0, help="link flow regularization weight")
+@click.option('--beta', type=float, default=np.inf, help="link flow regularization weight")
 @click.option('--verbose', is_flag=True)
 @click.option('--solver', type=click.Choice(cp.settings.SOLVERS, case_sensitive=False))
 @click.option('--obj-lb', type=float, help="lower cutoff for MIP objective")
@@ -47,11 +47,12 @@ HOUR = 60 * 60
 @click.option('--time-limit', type=float, help="time limit in hours for the MIP")
 @click.option('--mip-solutions', type=int, help="terminate MIP when this many solutions are found")
 @click.option('--link-error-as-constraint', is_flag=True, help="treat link error as a box constraint")
+@click.option('--rationality-lambda', type=float, default=0.0)
 def critical_fleet_size(result_path, result_kind, outfile, epsilon_user, epsilon_fleet,
                         epsilon_fleet_marginal_cost,
                         max_paths_per_trip,
                         mip, mcr, cfs_lp, abandon, col_gen, cfs_so, use_all_paths, beta, verbose, solver,
-                        obj_lb, obj_ub, time_limit, mip_solutions, link_error_as_constraint):
+                        obj_lb, obj_ub, time_limit, mip_solutions, link_error_as_constraint, rationality_lambda):
     click.echo(f"Running critical fleet size for {result_path}...")
     if epsilon_fleet_marginal_cost is None:
         epsilon_fleet_marginal_cost = epsilon_fleet
@@ -115,13 +116,15 @@ def critical_fleet_size(result_path, result_kind, outfile, epsilon_user, epsilon
             flow_scale=1,
             grad_cutoff=0.0,
             link_error_as_constraint=link_error_as_constraint,
+            lambda_=rationality_lambda,
+            trip_cost=tc.to_array(),
         )
         violated_constraints = mcr_lp.is_feasible(path_flow_est)
-        if violated_constraints:
-            raise Exception(
-                f"SO path flow violates {len(violated_constraints)}: {violated_constraints}")
-        else:
-            print("MCR is feasible.")
+        #if violated_constraints:
+        #    raise Exception(
+        #        f"SO path flow violates {len(violated_constraints)}: {violated_constraints}")
+        #else:
+        #    print("MCR is feasible.")
         #solve_with_scaling(mcr_lp.problem, None, verbose=True)
         mcr_lp.solve(solver=solver, verbose=verbose,
                      **solver_opts.get(solver, {}))
@@ -131,6 +134,9 @@ def critical_fleet_size(result_path, result_kind, outfile, epsilon_user, epsilon
             f"    ||link flow error||: {mcr_lp.link_flow_error() * mcr_lp.total_volume()} (gap={mcr_lp.link_flow_error()}) (total volume = {mcr_lp.total_volume()})")
         click.echo(
             f"    objective value: {mcr_lp.problem.value} ~= {mcr_lp.fleet_fraction() + beta * mcr_lp.link_flow_error()} ")
+        click.echo(
+            f"likelihood = {mcr_lp.likelihood()}"
+        )
         mcr_fleet_volume = mcr_lp.fleet_path_flow.value.sum()
         if obj_lb is None or mcr_fleet_volume >= obj_lb:
             obj_lb = mcr_fleet_volume
@@ -191,6 +197,7 @@ def critical_fleet_size(result_path, result_kind, outfile, epsilon_user, epsilon
                 grad_cutoff=0.0,
                 link_error_as_constraint=link_error_as_constraint,
                 trip_cost=tc.to_array(),
+                lambda_=rationality_lambda,
             )
             if initial_solve:
                 initial_solve = False
@@ -238,6 +245,9 @@ def critical_fleet_size(result_path, result_kind, outfile, epsilon_user, epsilon
                 done = True
         click.echo(
             f"\nCritical fleet size lp upper bound solved in {time.time()-t0} seconds: {100 * lp.fleet_fraction():0.4f}%.\n")
+        click.echo(
+            f"likelihood = {lp.likelihood()}"
+        )
         cfs_fleet_volume = lp.fleet_path_flow.value.sum()
         if obj_ub is None or cfs_fleet_volume <= obj_ub:
             obj_ub = cfs_fleet_volume
